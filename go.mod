@@ -1,6 +1,6 @@
 module github.com/steipete/sag
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/ebitengine/oto/v3 v3.4.0
@@ -9,8 +9,8 @@ require (
 )
 
 require (
-	github.com/ebitengine/purego v0.9.1 // indirect
+	github.com/ebitengine/purego v0.10.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	golang.org/x/sys v0.40.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
 )
