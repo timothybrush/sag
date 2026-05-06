@@ -1,0 +1,170 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">sag social card</title>
+  <desc id="desc">sag: ElevenLabs speech, mac-style ease. A Go CLI that turns text into ElevenLabs speech the way macOS say does.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d0a18"/>
+      <stop offset="0.55" stop-color="#15102a"/>
+      <stop offset="1" stop-color="#1f1438"/>
+    </linearGradient>
+    <linearGradient id="title-gradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#a78bfa"/>
+      <stop offset="0.45" stop-color="#ec4899"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a1325"/>
+      <stop offset="1" stop-color="#0f0a1c"/>
+    </linearGradient>
+    <linearGradient id="panelBar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a223e"/>
+      <stop offset="1" stop-color="#1d1730"/>
+    </linearGradient>
+    <linearGradient id="waveSweep" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7c3aed"/>
+      <stop offset="0.34" stop-color="#a855f7"/>
+      <stop offset="0.67" stop-color="#ec4899"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#000000" flood-opacity="0.6"/>
+    </filter>
+    <filter id="glow" x="-30%" y="-50%" width="160%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- Subtle dotted grid -->
+  <g fill="#2a223e" opacity="0.35">
+    <circle cx="100" cy="100" r="1.5"/><circle cx="200" cy="100" r="1.5"/><circle cx="300" cy="100" r="1.5"/>
+    <circle cx="100" cy="200" r="1.5"/><circle cx="200" cy="200" r="1.5"/><circle cx="300" cy="200" r="1.5"/>
+    <circle cx="100" cy="300" r="1.5"/><circle cx="200" cy="300" r="1.5"/>
+    <circle cx="100" cy="400" r="1.5"/>
+    <circle cx="100" cy="500" r="1.5"/>
+  </g>
+
+  <!-- Brand mark: waveform bars in a rounded tile -->
+  <g transform="translate(76 76)" filter="url(#glow)">
+    <rect x="0" y="0" width="118" height="118" rx="26" fill="#0a0814" stroke="#2a223e"/>
+    <g transform="translate(20 38)" stroke-linecap="round" stroke-width="9">
+      <line x1="6"  y1="20" x2="6"  y2="22" stroke="#7c3aed"/>
+      <line x1="22" y1="12" x2="22" y2="30" stroke="#a855f7"/>
+      <line x1="38" y1="2"  x2="38" y2="40" stroke="#ec4899"/>
+      <line x1="54" y1="14" x2="54" y2="28" stroke="#f59e0b"/>
+      <line x1="70" y1="18" x2="70" y2="24" stroke="#a855f7"/>
+    </g>
+  </g>
+
+  <!-- Title -->
+  <text x="76" y="280" fill="url(#title-gradient)" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="116" font-weight="800" letter-spacing="-2">sag</text>
+
+  <!-- Tagline (one strong line) -->
+  <text x="76" y="338" fill="#f3eefb" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="34" font-weight="700" letter-spacing="0">ElevenLabs speech, mac-style ease.</text>
+
+  <!-- Description (two lines) -->
+  <text x="76" y="384" fill="#9b8fc7" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500" letter-spacing="0">A Go CLI that streams TTS to your speakers,</text>
+  <text x="76" y="414" fill="#9b8fc7" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="500" letter-spacing="0">like macOS `say`. One binary, zero ceremony.</text>
+
+  <!-- Multi-color accent bar -->
+  <rect x="76" y="438" width="280" height="4" rx="2" fill="url(#waveSweep)"/>
+
+  <!-- Bottom row: install pill + URL pill -->
+  <g transform="translate(76 478)">
+    <rect x="0" y="0" width="380" height="48" rx="11" fill="#0a0814" stroke="#2a223e"/>
+    <text x="20" y="32" fill="#9b8fc7" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="500">$</text>
+    <text x="42" y="32" fill="#e8e0f5" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600">brew install steipete/tap/sag</text>
+
+    <rect x="400" y="0" width="120" height="48" rx="11" fill="#1a1325" stroke="#3f3357"/>
+    <text x="460" y="32" fill="#f3eefb" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600" text-anchor="middle">sag.sh</text>
+  </g>
+
+  <!-- Right-side terminal mockup -->
+  <g transform="translate(670 142)" filter="url(#shadow)">
+    <rect x="0" y="0" width="464" height="346" rx="20" fill="url(#panel)" stroke="#2a223e"/>
+    <rect x="0" y="0" width="464" height="42" rx="20" fill="url(#panelBar)"/>
+    <rect x="0" y="22" width="464" height="20" fill="url(#panelBar)"/>
+    <circle cx="24" cy="21" r="6" fill="#ec4899"/>
+    <circle cx="46" cy="21" r="6" fill="#f59e0b"/>
+    <circle cx="68" cy="21" r="6" fill="#a855f7"/>
+    <text x="232" y="27" fill="#9b8fc7" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13" font-weight="500" text-anchor="middle">sag — speak</text>
+
+    <!-- Terminal content -->
+    <text x="22" y="80" fill="#c4b5fd" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="600">$ sag -v Roger "Hello, world."</text>
+
+    <!-- Animated waveform visualization -->
+    <g transform="translate(22 100)">
+      <rect x="0" y="0" width="420" height="60" rx="10" fill="#0a0814" stroke="#2a223e"/>
+      <g transform="translate(20 30)" stroke-linecap="round" stroke-width="3">
+        <line x1="0"   y1="-4"  x2="0"   y2="4"  stroke="#7c3aed"/>
+        <line x1="10"  y1="-9"  x2="10"  y2="9"  stroke="#7c3aed"/>
+        <line x1="20"  y1="-14" x2="20"  y2="14" stroke="#a855f7"/>
+        <line x1="30"  y1="-19" x2="30"  y2="19" stroke="#a855f7"/>
+        <line x1="40"  y1="-22" x2="40"  y2="22" stroke="#ec4899"/>
+        <line x1="50"  y1="-19" x2="50"  y2="19" stroke="#ec4899"/>
+        <line x1="60"  y1="-14" x2="60"  y2="14" stroke="#ec4899"/>
+        <line x1="70"  y1="-9"  x2="70"  y2="9"  stroke="#f59e0b"/>
+        <line x1="80"  y1="-15" x2="80"  y2="15" stroke="#f59e0b"/>
+        <line x1="90"  y1="-22" x2="90"  y2="22" stroke="#f59e0b"/>
+        <line x1="100" y1="-18" x2="100" y2="18" stroke="#ec4899"/>
+        <line x1="110" y1="-12" x2="110" y2="12" stroke="#ec4899"/>
+        <line x1="120" y1="-7"  x2="120" y2="7"  stroke="#a855f7"/>
+        <line x1="130" y1="-13" x2="130" y2="13" stroke="#a855f7"/>
+        <line x1="140" y1="-20" x2="140" y2="20" stroke="#7c3aed"/>
+        <line x1="150" y1="-15" x2="150" y2="15" stroke="#7c3aed"/>
+        <line x1="160" y1="-8"  x2="160" y2="8"  stroke="#a855f7"/>
+        <line x1="170" y1="-14" x2="170" y2="14" stroke="#a855f7"/>
+        <line x1="180" y1="-21" x2="180" y2="21" stroke="#ec4899"/>
+        <line x1="190" y1="-17" x2="190" y2="17" stroke="#ec4899"/>
+        <line x1="200" y1="-11" x2="200" y2="11" stroke="#f59e0b"/>
+        <line x1="210" y1="-6"  x2="210" y2="6"  stroke="#f59e0b"/>
+        <line x1="220" y1="-12" x2="220" y2="12" stroke="#ec4899"/>
+        <line x1="230" y1="-18" x2="230" y2="18" stroke="#ec4899"/>
+        <line x1="240" y1="-13" x2="240" y2="13" stroke="#a855f7"/>
+        <line x1="250" y1="-8"  x2="250" y2="8"  stroke="#a855f7"/>
+        <line x1="260" y1="-14" x2="260" y2="14" stroke="#7c3aed"/>
+        <line x1="270" y1="-19" x2="270" y2="19" stroke="#7c3aed"/>
+        <line x1="280" y1="-13" x2="280" y2="13" stroke="#7c3aed"/>
+        <line x1="290" y1="-7"  x2="290" y2="7"  stroke="#a855f7"/>
+        <line x1="300" y1="-3"  x2="300" y2="3"  stroke="#a855f7"/>
+        <line x1="310" y1="-8"  x2="310" y2="8"  stroke="#ec4899"/>
+        <line x1="320" y1="-13" x2="320" y2="13" stroke="#ec4899"/>
+        <line x1="330" y1="-9"  x2="330" y2="9"  stroke="#f59e0b"/>
+        <line x1="340" y1="-4"  x2="340" y2="4"  stroke="#f59e0b"/>
+        <line x1="350" y1="-2"  x2="350" y2="2"  stroke="#a855f7"/>
+        <line x1="360" y1="-5"  x2="360" y2="5"  stroke="#a855f7"/>
+        <line x1="370" y1="-3"  x2="370" y2="3"  stroke="#7c3aed"/>
+      </g>
+    </g>
+
+    <text x="22" y="200" fill="#c4b5fd" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="600">$ sag voices --search english --try</text>
+    <text x="22" y="226" fill="#cbc4dc" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13">Roger      premade   ▸ playing preview</text>
+    <text x="22" y="246" fill="#cbc4dc" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13">Lily       premade   ▸ playing preview</text>
+    <text x="22" y="266" fill="#cbc4dc" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13">Daniel     premade   ▸ playing preview</text>
+
+    <text x="22" y="296" fill="#c4b5fd" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="15" font-weight="600">$ sag -o intro.mp3 "Welcome back."</text>
+    <text x="22" y="320" fill="#86efac" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13" font-weight="500">✓ wrote intro.mp3 (118 KB)</text>
+  </g>
+
+  <!-- Highlight pills below terminal -->
+  <g transform="translate(670 514)" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="600">
+    <g>
+      <rect x="0" y="0" width="120" height="30" rx="15" fill="#1a1325" stroke="#3f3357"/>
+      <text x="60" y="20" fill="#a78bfa" text-anchor="middle">macOS say</text>
+    </g>
+    <g transform="translate(132 0)">
+      <rect x="0" y="0" width="100" height="30" rx="15" fill="#1a1325" stroke="#3f3357"/>
+      <text x="50" y="20" fill="#ec4899" text-anchor="middle">streaming</text>
+    </g>
+    <g transform="translate(244 0)">
+      <rect x="0" y="0" width="92" height="30" rx="15" fill="#1a1325" stroke="#3f3357"/>
+      <text x="46" y="20" fill="#f59e0b" text-anchor="middle">v3 + v2.5</text>
+    </g>
+    <g transform="translate(348 0)">
+      <rect x="0" y="0" width="116" height="30" rx="15" fill="#1a1325" stroke="#3f3357"/>
+      <text x="58" y="20" fill="#a855f7" text-anchor="middle">MP3 / WAV / Opus</text>
+    </g>
+  </g>
+</svg>

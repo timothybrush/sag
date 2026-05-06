@@ -8,6 +8,8 @@
     "lint": "golangci-lint run",
     "format": "gofmt -w .",
     "test": "go test ./...",
-    "check": "pnpm lint && pnpm test"
+    "check": "pnpm lint && pnpm test",
+    "docs:build": "node scripts/build-docs-site.mjs",
+    "docs:serve": "node scripts/build-docs-site.mjs && node -e \"const http=require('http'),fs=require('fs'),path=require('path');const root=path.resolve('dist/docs-site');http.createServer((req,res)=>{let p=path.join(root,decodeURIComponent(req.url.split('?')[0]));if(fs.existsSync(p)&&fs.statSync(p).isDirectory())p=path.join(p,'index.html');if(!fs.existsSync(p)){res.statusCode=404;return res.end('not found')}const ext=path.extname(p);const types={'.html':'text/html','.css':'text/css','.js':'application/javascript','.svg':'image/svg+xml','.png':'image/png'};res.setHeader('Content-Type',types[ext]||'text/plain');fs.createReadStream(p).pipe(res)}).listen(4173,()=>console.log('serving http://localhost:4173'))\""
   }
 }

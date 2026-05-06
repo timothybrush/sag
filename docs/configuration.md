@@ -1,0 +1,119 @@
+---
+title: Configuration
+description: "API keys, default voices, timeouts, base URL, and player selection — everything sag reads from the environment."
+---
+
+# Configuration
+
+`sag` reads configuration from CLI flags first, then environment variables. There is no config file: the binary stays single-purpose and friendly to ephemeral CI runners.
+
+## API key
+
+Required for any TTS or voice call. `sag --help`, `sag prompting`, and `sag --version` work without one.
+
+| Flag / variable | Notes |
+| --- | --- |
+| `--api-key` | Inline override. Avoid in shell history; prefer env or `--api-key-file`. |
+| `ELEVENLABS_API_KEY` | Primary env var. |
+| `SAG_API_KEY` | Accepted alias. |
+| `--api-key-file <path>` | Read the key from a file. |
+| `ELEVENLABS_API_KEY_FILE` | Same as `--api-key-file`. |
+| `SAG_API_KEY_FILE` | Alias. |
+
+The file form is handy for agents and containers:
+
+```bash
+echo "$ELEVENLABS_API_KEY" > ~/.config/elevenlabs.key
+chmod 600 ~/.config/elevenlabs.key
+SAG_API_KEY_FILE=~/.config/elevenlabs.key sag voices --limit 3
+```
+
+## Default voice
+
+When `--voice` / `--voice-id` is omitted, `sag` resolves in this order:
+
+1. `ELEVENLABS_VOICE_ID`
+2. `SAG_VOICE_ID`
+3. The first voice returned by `/v1/voices` (logged on stderr so you notice).
+
+```bash
+export SAG_VOICE_ID=21m00Tcm4TlvDq8ikWAM
+sag "Default voice locked in."
+```
+
+Pass `?` to force the voice list and exit:
+
+```bash
+sag -v ?
+```
+
+## Timeouts
+
+`sag` ships with **no internal timeout** so that long v3 prompts don’t get truncated by a hidden SIGTERM. Decide for yourself:
+
+| Source | Behaviour |
+| --- | --- |
+| `--timeout 5m` flag | Cancels the TTS request after the given Go duration. `0` keeps the parent context. |
+| `SAG_TIMEOUT=5m` env | Same effect, set per shell or per CI job. |
+| Outer process timeout | Use `timeout(1)` or your scheduler if you want a hard kill. |
+
+The flag wins over the environment variable; both accept any `time.ParseDuration` string (`30s`, `2m`, `1h30m`).
+
+```bash
+SAG_TIMEOUT=10m sag --no-play -o long.mp3 "$(<chapter.txt)"
+```
+
+When sag is the bottleneck and the shell aborts the request, you’ll get a partial file. Use `ffprobe` to sanity-check duration before publishing.
+
+## Player backend
+
+| Value | Behaviour |
+| --- | --- |
+| `auto` (default) | `afplay` on macOS, `oto` everywhere else. |
+| `afplay` | macOS only; routes through CoreAudio so AirPlay and Bluetooth zones work. |
+| `oto` | Cross-platform Go decoder (`go-mp3` + `oto`). |
+
+Pick a backend explicitly via `--player oto` or `SAG_PLAYER=oto`. See [Streaming & playback](streaming.md) for trade-offs.
+
+## API base URL
+
+Override the ElevenLabs endpoint when you’re routing through a proxy or talking to a regional/staging deployment:
+
+```bash
+sag --base-url https://api.elevenlabs.io "Default."
+sag --base-url https://your-proxy.internal "Routed."
+```
+
+The default is `https://api.elevenlabs.io`. There is no env var for this; it’s deliberate so the API target is always visible in the command line.
+
+## Voice metadata cache
+
+`sag voices --query` and `--label` need full voice descriptors. Metadata is cached in your platform-default config directory (`$XDG_CONFIG_HOME/sag/voices.json` on Linux, `~/Library/Application Support/sag/voices.json` on macOS) for 24 hours. Delete the file or pass `--limit 0` after a voice update to force a refresh.
+
+## Compatibility flags (no-ops)
+
+These are accepted for `say` parity and silently ignored:
+
+`--progress`, `--audio-device`, `--network-send`, `--interactive`, `--file-format`, `--data-format`, `--channels`, `--bit-rate`, `--quality`.
+
+If you rely on these in a script, sag won’t error. They simply have no effect because the synthesis happens server-side.
+
+## Putting it together
+
+A typical agent profile looks like this:
+
+```bash
+export ELEVENLABS_API_KEY_FILE=~/.config/elevenlabs.key
+export SAG_VOICE_ID=21m00Tcm4TlvDq8ikWAM
+export SAG_TIMEOUT=5m
+export SAG_PLAYER=oto
+
+sag --no-play -o "$artifact" "$prompt"
+```
+
+## Related pages
+
+- [Quickstart](quickstart.md) — the minimal setup walkthrough.
+- [Streaming & playback](streaming.md) — when to use which backend.
+- [Output & formats](formats.md) — picking a codec and format string.
+- [Models](models.md) — model-specific pricing and latency.
