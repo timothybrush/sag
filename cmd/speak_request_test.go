@@ -193,6 +193,29 @@ func TestApplyCompatibilityFlagsConflict(t *testing.T) {
 	}
 }
 
+func TestPlaybackFuncExplicitBackends(t *testing.T) {
+	if fn, err := playbackFunc("oto"); err != nil || fn == nil {
+		t.Fatalf("playbackFunc oto error: %v", err)
+	}
+	if fn, err := playbackFunc("afplay"); err != nil || fn == nil {
+		t.Fatalf("playbackFunc afplay error: %v", err)
+	}
+}
+
+func TestPlaybackFuncEnv(t *testing.T) {
+	t.Setenv("SAG_PLAYER", "oto")
+	if fn, err := playbackFunc("auto"); err != nil || fn == nil {
+		t.Fatalf("playbackFunc auto with env error: %v", err)
+	}
+}
+
+func TestPlaybackFuncInvalid(t *testing.T) {
+	_, err := playbackFunc("wat")
+	if err == nil || !strings.Contains(err.Error(), "unknown player") {
+		t.Fatalf("expected player error, got %v", err)
+	}
+}
+
 func TestApplyTimeoutFromEnv(t *testing.T) {
 	t.Setenv("SAG_TIMEOUT", "2m")
 	opts := &speakOptions{}

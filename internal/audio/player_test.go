@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-func TestStreamToSpeakersBadMP3(t *testing.T) {
-	err := StreamToSpeakers(context.Background(), strings.NewReader("not-mp3"))
+func TestStreamViaOtoBadMP3(t *testing.T) {
+	err := StreamViaOto(context.Background(), strings.NewReader("not-mp3"))
 	if err == nil {
 		t.Fatalf("expected decode error")
 	}

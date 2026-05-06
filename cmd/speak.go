@@ -36,6 +36,7 @@ type speakOptions struct {
 	lang        string
 	metrics     bool
 	timeout     time.Duration
+	player      string
 
 	speakerBoost   bool
 	noSpeakerBoost bool
@@ -169,6 +170,7 @@ func init() {
 	cmd.Flags().StringVar(&opts.lang, "lang", "", "Language code (2-letter ISO 639-1; influences normalization; when set)")
 	cmd.Flags().BoolVar(&opts.metrics, "metrics", false, "Print request metrics to stderr (chars, bytes, duration, etc.)")
 	cmd.Flags().DurationVar(&opts.timeout, "timeout", 0, "Maximum time for TTS generation (0 disables sag's internal timeout; SAG_TIMEOUT)")
+	cmd.Flags().StringVar(&opts.player, "player", "auto", "Audio backend: auto (afplay on macOS, oto elsewhere), afplay, oto (SAG_PLAYER)")
 	cmd.Flags().StringVarP(&opts.inputFile, "input-file", "f", "", "Read text from file (use '-' for stdin), matching macOS say -f")
 	cmd.Flags().Bool("progress", false, "Accepted for macOS say compatibility (no-op)")
 	cmd.Flags().String("network-send", "", "Accepted for macOS say compatibility (not implemented)")
@@ -206,6 +208,25 @@ func applyCompatibilityFlags(cmd *cobra.Command, opts *speakOptions) error {
 		opts.stream = false
 	}
 	return nil
+}
+
+func playbackFunc(choice string) (func(context.Context, io.Reader) error, error) {
+	choice = strings.ToLower(strings.TrimSpace(choice))
+	if choice == "" || choice == "auto" {
+		if env := strings.TrimSpace(os.Getenv("SAG_PLAYER")); env != "" {
+			choice = strings.ToLower(env)
+		}
+	}
+	switch choice {
+	case "", "auto":
+		return playToSpeakers, nil
+	case "afplay":
+		return audio.StreamViaAfplay, nil
+	case "oto":
+		return audio.StreamViaOto, nil
+	default:
+		return nil, fmt.Errorf("unknown player %q; choose auto, afplay, or oto", choice)
+	}
 }
 
 func applyTimeoutFromEnv(cmd *cobra.Command, opts *speakOptions) error {
@@ -432,6 +453,10 @@ func streamAndPlay(ctx context.Context, client *elevenlabs.Client, opts speakOpt
 	}
 
 	if opts.play {
+		player, err := playbackFunc(opts.player)
+		if err != nil {
+			return 0, err
+		}
 		pr, pw := io.Pipe()
 		writers = append(writers, pw)
 		mw := io.MultiWriter(writers...)
@@ -445,7 +470,7 @@ func streamAndPlay(ctx context.Context, client *elevenlabs.Client, opts speakOpt
 			_ = pw.Close()
 		}()
 
-		playErr := playToSpeakers(ctx, pr)
+		playErr := player(ctx, pr)
 		copyNVal := <-copyN
 		copyErrVal := <-copyErr
 		if copyErrVal != nil {
@@ -480,12 +505,16 @@ func convertAndPlay(ctx context.Context, client *elevenlabs.Client, opts speakOp
 	}
 
 	if opts.play {
+		player, err := playbackFunc(opts.player)
+		if err != nil {
+			return n, err
+		}
 		pr, pw := io.Pipe()
 		go func() {
 			_, _ = pw.Write(data)
 			_ = pw.Close()
 		}()
-		return n, playToSpeakers(ctx, pr)
+		return n, player(ctx, pr)
 	}
 	if opts.outputPath == "" {
 		return n, errors.New("nothing to do: enable --play or provide --output")
