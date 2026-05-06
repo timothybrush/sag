@@ -80,6 +80,7 @@ Key flags (subset):
 - `--stream/--no-stream` stream while generating (default on)
 - `--latency-tier` 0–4 lower latency tiers
 - `--play/--no-play` control speaker playback
+- `--timeout` maximum TTS generation time, e.g. `--timeout 5m`; `0` means no internal timeout (default, also configurable via `SAG_TIMEOUT`)
 - `--metrics` print basic stats to stderr
 
 Voices:
@@ -117,6 +118,21 @@ Notes:
 - Input limits differ by engine (v3: 5,000 chars; v2: 10,000 chars; v2.5 Turbo/Flash: 40,000 chars). If you hit limits, chunk text and stitch audio.
 - `--normalize on` may not be available for v2.5 Turbo/Flash (higher latency); prefer `auto`/`off` if it errors.
 - Source of truth: ElevenLabs “Models” docs.
+
+## Timeout considerations
+
+Longer text can take more than a minute to generate, especially with `eleven_v3`. By default, `sag` does not add its own generation timeout, so callers such as agents, scripts, shells, or CI jobs can choose the right outer timeout without getting a valid-but-truncated audio file from an internal SIGTERM.
+
+If you want `sag` itself to stop a request, set an explicit duration:
+```bash
+sag --timeout 5m --no-play -o long.mp3 "Long text..."
+SAG_TIMEOUT=5m sag --no-play -o long.mp3 "Long text..."
+```
+
+For long agent/script runs, give the outer process timeout enough headroom and verify generated audio duration when truncation would matter:
+```bash
+ffprobe -v quiet -show_entries format=duration -of csv=p=0 long.mp3
+```
 
 ## Development
 - With pnpm:

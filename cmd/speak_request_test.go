@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -153,5 +155,102 @@ func TestBuildTTSRequest_V3StabilityPresetsOnly(t *testing.T) {
 	_, err := buildTTSRequest(cmd, *opts, "hello")
 	if err == nil || !strings.Contains(err.Error(), "for eleven_v3, stability must be one of") {
 		t.Fatalf("expected v3 stability preset error, got %v", err)
+	}
+}
+
+func TestApplyCompatibilityFlagsNoPlayNoStream(t *testing.T) {
+	opts := &speakOptions{play: true, stream: true}
+	cmd := &cobra.Command{Use: "speak"}
+	cmd.Flags().BoolVar(&opts.play, "play", opts.play, "")
+	cmd.Flags().Bool("no-play", false, "")
+	cmd.Flags().BoolVar(&opts.stream, "stream", opts.stream, "")
+	cmd.Flags().Bool("no-stream", false, "")
+
+	if err := cmd.Flags().Parse([]string{"--no-play", "--no-stream"}); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	if err := applyCompatibilityFlags(cmd, opts); err != nil {
+		t.Fatalf("applyCompatibilityFlags error: %v", err)
+	}
+	if opts.play || opts.stream {
+		t.Fatalf("expected play=false and stream=false, got play=%t stream=%t", opts.play, opts.stream)
+	}
+}
+
+func TestApplyCompatibilityFlagsConflict(t *testing.T) {
+	opts := &speakOptions{play: true}
+	cmd := &cobra.Command{Use: "speak"}
+	cmd.Flags().BoolVar(&opts.play, "play", opts.play, "")
+	cmd.Flags().Bool("no-play", false, "")
+	cmd.Flags().BoolVar(&opts.stream, "stream", true, "")
+	cmd.Flags().Bool("no-stream", false, "")
+
+	if err := cmd.Flags().Parse([]string{"--play", "--no-play"}); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	if err := applyCompatibilityFlags(cmd, opts); err == nil || !strings.Contains(err.Error(), "choose only one") {
+		t.Fatalf("expected conflict error, got %v", err)
+	}
+}
+
+func TestApplyTimeoutFromEnv(t *testing.T) {
+	t.Setenv("SAG_TIMEOUT", "2m")
+	opts := &speakOptions{}
+	cmd := &cobra.Command{Use: "speak"}
+	cmd.Flags().DurationVar(&opts.timeout, "timeout", 0, "")
+
+	if err := applyTimeoutFromEnv(cmd, opts); err != nil {
+		t.Fatalf("applyTimeoutFromEnv error: %v", err)
+	}
+	if opts.timeout != 2*time.Minute {
+		t.Fatalf("timeout = %s, want 2m", opts.timeout)
+	}
+}
+
+func TestApplyTimeoutFromEnvFlagWins(t *testing.T) {
+	t.Setenv("SAG_TIMEOUT", "2m")
+	opts := &speakOptions{}
+	cmd := &cobra.Command{Use: "speak"}
+	cmd.Flags().DurationVar(&opts.timeout, "timeout", 0, "")
+	if err := cmd.Flags().Parse([]string{"--timeout", "30s"}); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+
+	if err := applyTimeoutFromEnv(cmd, opts); err != nil {
+		t.Fatalf("applyTimeoutFromEnv error: %v", err)
+	}
+	if opts.timeout != 30*time.Second {
+		t.Fatalf("timeout = %s, want 30s", opts.timeout)
+	}
+}
+
+func TestTTSContextNoDeadlineByDefault(t *testing.T) {
+	ctx, cancel, err := ttsContext(context.Background(), 0)
+	if err != nil {
+		t.Fatalf("ttsContext error: %v", err)
+	}
+	defer cancel()
+
+	if _, ok := ctx.Deadline(); ok {
+		t.Fatalf("expected no deadline for zero timeout")
+	}
+}
+
+func TestTTSContextWithTimeout(t *testing.T) {
+	ctx, cancel, err := ttsContext(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("ttsContext error: %v", err)
+	}
+	defer cancel()
+
+	if _, ok := ctx.Deadline(); !ok {
+		t.Fatalf("expected deadline for non-zero timeout")
+	}
+}
+
+func TestTTSContextRejectsNegativeTimeout(t *testing.T) {
+	_, _, err := ttsContext(context.Background(), -time.Second)
+	if err == nil || !strings.Contains(err.Error(), "timeout must be") {
+		t.Fatalf("expected timeout error, got %v", err)
 	}
 }

@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"path"
 	"strings"
-	"time"
 )
 
 // Client talks to the ElevenLabs HTTP API.
@@ -26,11 +25,9 @@ func NewClient(apiKey, baseURL string) *Client {
 		baseURL = "https://api.elevenlabs.io"
 	}
 	return &Client{
-		baseURL: baseURL,
-		apiKey:  apiKey,
-		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
-		},
+		baseURL:    baseURL,
+		apiKey:     apiKey,
+		httpClient: &http.Client{},
 	}
 }
 

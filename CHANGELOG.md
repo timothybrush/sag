@@ -6,6 +6,8 @@
 - Bare `sag` now reads piped stdin like macOS `say`, so `echo "hello" | sag` speaks the text without requiring the `speak` subcommand. (#14, thanks @atdrendel)
 ### Fixed
 - `--format` and `.ogg`/`.opus` output paths now request native ElevenLabs Opus output instead of always receiving MP3. (#16, thanks @derspotter)
+- Long TTS generation no longer hits hidden 60s/90s internal timeouts; use `--timeout` or `SAG_TIMEOUT` when you want `sag` to enforce a limit. (#17/#18, thanks @sumurtk2)
+- `--no-play` and `--no-stream` are now accepted aliases for `--play=false` and `--stream=false`.
 
 ## 0.2.2 - 2026-01-24
 ### Fixed

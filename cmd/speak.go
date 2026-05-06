@@ -35,6 +35,7 @@ type speakOptions struct {
 	normalize   string
 	lang        string
 	metrics     bool
+	timeout     time.Duration
 
 	speakerBoost   bool
 	noSpeakerBoost bool
@@ -63,6 +64,12 @@ func init() {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := applyRateAndSpeed(&opts); err != nil {
+				return err
+			}
+			if err := applyCompatibilityFlags(cmd, &opts); err != nil {
+				return err
+			}
+			if err := applyTimeoutFromEnv(cmd, &opts); err != nil {
 				return err
 			}
 
@@ -105,7 +112,10 @@ func init() {
 				}
 			}
 
-			ctx, cancel := context.WithTimeout(cmd.Context(), 90*time.Second)
+			ctx, cancel, err := ttsContext(cmd.Context(), opts.timeout)
+			if err != nil {
+				return err
+			}
 			defer cancel()
 
 			payload, err := buildTTSRequest(cmd, opts, text)
@@ -142,7 +152,9 @@ func init() {
 	cmd.Flags().StringVarP(&opts.outputPath, "output", "o", "", "Write audio to file (disables playback unless --play is also set)")
 	cmd.Flags().StringVar(&opts.outputFmt, "format", opts.outputFmt, "Output format (e.g. mp3_44100_128)")
 	cmd.Flags().BoolVar(&opts.stream, "stream", opts.stream, "Stream audio while generating")
+	cmd.Flags().Bool("no-stream", false, "Disable streaming and wait for the full audio response")
 	cmd.Flags().BoolVar(&opts.play, "play", opts.play, "Play audio through speakers")
+	cmd.Flags().Bool("no-play", false, "Disable speaker playback")
 	cmd.Flags().IntVar(&opts.latencyTier, "latency-tier", 0, "Streaming latency tier (0=default,1-4 lower latency may cost more)")
 	cmd.Flags().Float64Var(&opts.speed, "speed", opts.speed, "Speech speed multiplier (e.g. 1.1 faster, 0.9 slower)")
 	cmd.Flags().IntVarP(&opts.rateWPM, "rate", "r", 0, "macOS say-style words-per-minute; overrides --speed when set (default 175 wpm)")
@@ -156,6 +168,7 @@ func init() {
 	cmd.Flags().StringVar(&opts.normalize, "normalize", "", "Text normalization: auto|on|off (numbers/units/URLs; when set)")
 	cmd.Flags().StringVar(&opts.lang, "lang", "", "Language code (2-letter ISO 639-1; influences normalization; when set)")
 	cmd.Flags().BoolVar(&opts.metrics, "metrics", false, "Print request metrics to stderr (chars, bytes, duration, etc.)")
+	cmd.Flags().DurationVar(&opts.timeout, "timeout", 0, "Maximum time for TTS generation (0 disables sag's internal timeout; SAG_TIMEOUT)")
 	cmd.Flags().StringVarP(&opts.inputFile, "input-file", "f", "", "Read text from file (use '-' for stdin), matching macOS say -f")
 	cmd.Flags().Bool("progress", false, "Accepted for macOS say compatibility (no-op)")
 	cmd.Flags().String("network-send", "", "Accepted for macOS say compatibility (not implemented)")
@@ -168,6 +181,59 @@ func init() {
 	cmd.Flags().Int("quality", 0, "Accepted for macOS say compatibility (not implemented)")
 
 	rootCmd.AddCommand(cmd)
+}
+
+func applyCompatibilityFlags(cmd *cobra.Command, opts *speakOptions) error {
+	noPlay, err := cmd.Flags().GetBool("no-play")
+	if err != nil {
+		return err
+	}
+	if noPlay {
+		if cmd.Flags().Changed("play") && opts.play {
+			return errors.New("choose only one of --play or --no-play")
+		}
+		opts.play = false
+	}
+
+	noStream, err := cmd.Flags().GetBool("no-stream")
+	if err != nil {
+		return err
+	}
+	if noStream {
+		if cmd.Flags().Changed("stream") && opts.stream {
+			return errors.New("choose only one of --stream or --no-stream")
+		}
+		opts.stream = false
+	}
+	return nil
+}
+
+func applyTimeoutFromEnv(cmd *cobra.Command, opts *speakOptions) error {
+	if cmd.Flags().Changed("timeout") {
+		return nil
+	}
+	env := strings.TrimSpace(os.Getenv("SAG_TIMEOUT"))
+	if env == "" {
+		return nil
+	}
+	timeout, err := time.ParseDuration(env)
+	if err != nil {
+		return fmt.Errorf("invalid SAG_TIMEOUT %q: %w", env, err)
+	}
+	opts.timeout = timeout
+	return nil
+}
+
+func ttsContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc, error) {
+	if timeout < 0 {
+		return nil, nil, errors.New("timeout must be >= 0")
+	}
+	if timeout == 0 {
+		ctx, cancel := context.WithCancel(parent)
+		return ctx, cancel, nil
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	return ctx, cancel, nil
 }
 
 func applyRateAndSpeed(opts *speakOptions) error {
