@@ -28,25 +28,32 @@ jobs:
           go-version: "1.24.x"
           check-latest: true
 
-      - name: Build universal macOS binary
+      - name: Build macOS binaries
         shell: bash
         run: |
           set -euo pipefail
           ref="${{ inputs.tag }}"
           if [ -z "$ref" ]; then ref="${GITHUB_REF_NAME}"; fi
           version="${ref#v}"
-          mkdir -p dist/build dist/out/pkg
+          mkdir -p dist/build dist/out
 
           CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -o dist/build/sag-darwin-arm64 ./cmd/sag
           CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o dist/build/sag-darwin-amd64 ./cmd/sag
 
           lipo -create -output dist/build/sag dist/build/sag-darwin-arm64 dist/build/sag-darwin-amd64
 
-          cp README.md LICENSE dist/out/pkg/
-          cp dist/build/sag dist/out/pkg/
-          tar -C dist/out/pkg -czf "dist/out/sag_${version}_darwin_universal.tar.gz" sag README.md LICENSE
-
-          shasum -a 256 "dist/out/sag_${version}_darwin_universal.tar.gz" > "dist/out/sag_${version}_darwin_universal.tar.gz.sha256"
+          for target in darwin_arm64 darwin_amd64 darwin_universal; do
+            rm -rf dist/pkg
+            mkdir -p dist/pkg
+            cp README.md LICENSE dist/pkg/
+            case "$target" in
+              darwin_arm64) cp dist/build/sag-darwin-arm64 dist/pkg/sag ;;
+              darwin_amd64) cp dist/build/sag-darwin-amd64 dist/pkg/sag ;;
+              darwin_universal) cp dist/build/sag dist/pkg/sag ;;
+            esac
+            tar -C dist/pkg -czf "dist/out/sag_${version}_${target}.tar.gz" sag README.md LICENSE
+            shasum -a 256 "dist/out/sag_${version}_${target}.tar.gz" > "dist/out/sag_${version}_${target}.tar.gz.sha256"
+          done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -70,25 +77,32 @@ jobs:
           go-version: "1.24.x"
           check-latest: true
 
-      - name: Install system dependencies (audio)
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
 
-      - name: Build linux amd64 binary
+      - name: Build Linux binaries
         shell: bash
         run: |
           set -euo pipefail
           ref="${{ inputs.tag }}"
           if [ -z "$ref" ]; then ref="${GITHUB_REF_NAME}"; fi
           version="${ref#v}"
-          mkdir -p dist/build dist/out/pkg
+          mkdir -p dist/build dist/out
 
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o dist/build/sag ./cmd/sag
+          CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -o dist/build/sag-linux-arm64 ./cmd/sag
 
-          cp README.md LICENSE dist/out/pkg/
-          cp dist/build/sag dist/out/pkg/
-          tar -C dist/out/pkg -czf "dist/out/sag_${version}_linux_amd64.tar.gz" sag README.md LICENSE
-
-          sha256sum "dist/out/sag_${version}_linux_amd64.tar.gz" > "dist/out/sag_${version}_linux_amd64.tar.gz.sha256"
+          for target in linux_amd64 linux_arm64; do
+            rm -rf dist/pkg
+            mkdir -p dist/pkg
+            cp README.md LICENSE dist/pkg/
+            case "$target" in
+              linux_amd64) cp dist/build/sag dist/pkg/sag ;;
+              linux_arm64) cp dist/build/sag-linux-arm64 dist/pkg/sag ;;
+            esac
+            tar -C dist/pkg -czf "dist/out/sag_${version}_${target}.tar.gz" sag README.md LICENSE
+            sha256sum "dist/out/sag_${version}_${target}.tar.gz" > "dist/out/sag_${version}_${target}.tar.gz.sha256"
+          done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -199,7 +213,6 @@ jobs:
             -f tag="${{ steps.release.outputs.tag }}" \
             -f repository=steipete/sag \
             -f artifact_template='sag_{version}_{target}.tar.gz' \
-            -f linux_url='https://github.com/steipete/sag/archive/refs/tags/${{ steps.release.outputs.tag }}.tar.gz' \
             -f request_id="${{ steps.release.outputs.request_id }}"
 
       - name: Wait for tap update

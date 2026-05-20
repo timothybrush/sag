@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+### Changed
+- Release archives now include target-specific macOS and Linux assets for Homebrew and aqua installers.
+
 ## 0.3.0 - 2026-05-06
 ### Added
 - Voice discovery: semantic `--query` over name/description/labels, repeatable `--label` filters, preview playback via `--try`, metadata caching, and server-side name search when supported.
