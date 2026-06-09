@@ -12,10 +12,14 @@ import (
 	"time"
 
 	"github.com/steipete/sag/internal/audio"
-	"github.com/steipete/sag/internal/elevenlabs"
+	"github.com/steipete/sag/internal/tts"
 
 	"github.com/spf13/cobra"
 )
+
+// playbackFormat is the format requested when audio must be decoded for
+// speaker playback (the oto/afplay path handles MP3).
+const playbackFormat = "mp3_44100_128"
 
 type speakOptions struct {
 	voiceID     string
@@ -61,7 +65,7 @@ func init() {
 		Long:  "If no text argument is provided, the command reads from stdin.\n\nTip: run `sag prompting` for model-specific prompting tips and recommended flag combinations.",
 		Args:  cobra.ArbitraryArgs,
 		PreRunE: func(_ *cobra.Command, _ []string) error {
-			return ensureAPIKey()
+			return ensureProviderConfigured()
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := applyRateAndSpeed(&opts); err != nil {
@@ -85,7 +89,10 @@ func init() {
 					forceVoiceID = true
 				}
 			}
-			client := elevenlabs.NewClient(cfg.APIKey, cfg.BaseURL)
+			client, providerName, err := selectProvider()
+			if err != nil {
+				return err
+			}
 
 			voiceID, err := resolveVoice(cmd.Context(), client, voiceInput, forceVoiceID)
 			if err != nil {
@@ -113,13 +120,22 @@ func init() {
 				}
 			}
 
+			if providerName == providerSixtyDB {
+				noteUnsupportedSixtyDBFlags(cmd.Flags().Changed)
+				// Speaker playback needs MP3; 60db's stream picks its own format
+				// and convert honors this request.
+				if opts.play {
+					opts.outputFmt = playbackFormat
+				}
+			}
+
 			ctx, cancel, err := ttsContext(cmd.Context(), opts.timeout)
 			if err != nil {
 				return err
 			}
 			defer cancel()
 
-			payload, err := buildTTSRequest(cmd, opts, text)
+			payload, err := buildTTSRequest(cmd, opts, text, providerName)
 			if err != nil {
 				return err
 			}
@@ -272,17 +288,18 @@ func applyRateAndSpeed(opts *speakOptions) error {
 	return nil
 }
 
-func buildTTSRequest(cmd *cobra.Command, opts speakOptions, text string) (elevenlabs.TTSRequest, error) {
+func buildTTSRequest(cmd *cobra.Command, opts speakOptions, text, providerName string) (tts.TTSRequest, error) {
 	flags := cmd.Flags()
 
 	var stabilityPtr *float64
 	if flags.Changed("stability") {
 		if opts.stability < 0 || opts.stability > 1 {
-			return elevenlabs.TTSRequest{}, errors.New("stability must be between 0 and 1")
+			return tts.TTSRequest{}, errors.New("stability must be between 0 and 1")
 		}
-		if opts.modelID == "eleven_v3" {
+		// The discrete 0/0.5/1 constraint is specific to ElevenLabs eleven_v3.
+		if providerName == providerElevenLabs && opts.modelID == "eleven_v3" {
 			if !floatEqualsOneOf(opts.stability, []float64{0, 0.5, 1}) {
-				return elevenlabs.TTSRequest{}, errors.New("for eleven_v3, stability must be one of 0.0, 0.5, 1.0 (Creative/Natural/Robust)")
+				return tts.TTSRequest{}, errors.New("for eleven_v3, stability must be one of 0.0, 0.5, 1.0 (Creative/Natural/Robust)")
 			}
 		}
 		stabilityPtr = &opts.stability
@@ -291,7 +308,7 @@ func buildTTSRequest(cmd *cobra.Command, opts speakOptions, text string) (eleven
 	var similarityPtr *float64
 	if flags.Changed("similarity") || flags.Changed("similarity-boost") {
 		if opts.similarity < 0 || opts.similarity > 1 {
-			return elevenlabs.TTSRequest{}, errors.New("similarity must be between 0 and 1")
+			return tts.TTSRequest{}, errors.New("similarity must be between 0 and 1")
 		}
 		similarityPtr = &opts.similarity
 	}
@@ -299,13 +316,13 @@ func buildTTSRequest(cmd *cobra.Command, opts speakOptions, text string) (eleven
 	var stylePtr *float64
 	if flags.Changed("style") {
 		if opts.style < 0 || opts.style > 1 {
-			return elevenlabs.TTSRequest{}, errors.New("style must be between 0 and 1")
+			return tts.TTSRequest{}, errors.New("style must be between 0 and 1")
 		}
 		stylePtr = &opts.style
 	}
 
 	if flags.Changed("speaker-boost") && flags.Changed("no-speaker-boost") {
-		return elevenlabs.TTSRequest{}, errors.New("choose only one of --speaker-boost or --no-speaker-boost")
+		return tts.TTSRequest{}, errors.New("choose only one of --speaker-boost or --no-speaker-boost")
 	}
 	var speakerBoostPtr *bool
 	if flags.Changed("speaker-boost") {
@@ -319,7 +336,7 @@ func buildTTSRequest(cmd *cobra.Command, opts speakOptions, text string) (eleven
 	var seedPtr *uint32
 	if flags.Changed("seed") {
 		if opts.seed > 4294967295 {
-			return elevenlabs.TTSRequest{}, errors.New("seed must be between 0 and 4294967295")
+			return tts.TTSRequest{}, errors.New("seed must be between 0 and 4294967295")
 		}
 		v := uint32(opts.seed)
 		seedPtr = &v
@@ -330,7 +347,7 @@ func buildTTSRequest(cmd *cobra.Command, opts speakOptions, text string) (eleven
 		switch normalize {
 		case "auto", "on", "off":
 		default:
-			return elevenlabs.TTSRequest{}, errors.New("normalize must be one of: auto, on, off")
+			return tts.TTSRequest{}, errors.New("normalize must be one of: auto, on, off")
 		}
 	} else {
 		normalize = ""
@@ -339,11 +356,11 @@ func buildTTSRequest(cmd *cobra.Command, opts speakOptions, text string) (eleven
 	lang := strings.ToLower(strings.TrimSpace(opts.lang))
 	if flags.Changed("lang") {
 		if len(lang) != 2 {
-			return elevenlabs.TTSRequest{}, errors.New("lang must be a 2-letter ISO 639-1 code (e.g. en, de, fr)")
+			return tts.TTSRequest{}, errors.New("lang must be a 2-letter ISO 639-1 code (e.g. en, de, fr)")
 		}
 		for _, r := range lang {
 			if r < 'a' || r > 'z' {
-				return elevenlabs.TTSRequest{}, errors.New("lang must be a 2-letter ISO 639-1 code (e.g. en, de, fr)")
+				return tts.TTSRequest{}, errors.New("lang must be a 2-letter ISO 639-1 code (e.g. en, de, fr)")
 			}
 		}
 	} else {
@@ -351,14 +368,14 @@ func buildTTSRequest(cmd *cobra.Command, opts speakOptions, text string) (eleven
 	}
 
 	speed := opts.speed
-	return elevenlabs.TTSRequest{
+	return tts.TTSRequest{
 		Text:                   text,
 		ModelID:                opts.modelID,
 		OutputFormat:           opts.outputFmt,
 		Seed:                   seedPtr,
 		ApplyTextNormalization: normalize,
 		LanguageCode:           lang,
-		VoiceSettings: &elevenlabs.VoiceSettings{
+		VoiceSettings: &tts.VoiceSettings{
 			Speed:           &speed,
 			Stability:       stabilityPtr,
 			SimilarityBoost: similarityPtr,
@@ -427,7 +444,7 @@ func isStdinTTY() bool {
 	return (stat.Mode() & os.ModeCharDevice) != 0
 }
 
-func streamAndPlay(ctx context.Context, client *elevenlabs.Client, opts speakOptions, payload elevenlabs.TTSRequest) (int64, error) {
+func streamAndPlay(ctx context.Context, client tts.Provider, opts speakOptions, payload tts.TTSRequest) (int64, error) {
 	resp, err := client.StreamTTS(ctx, opts.voiceID, payload, opts.latencyTier)
 	if err != nil {
 		return 0, err
@@ -488,7 +505,7 @@ func streamAndPlay(ctx context.Context, client *elevenlabs.Client, opts speakOpt
 	return n, err
 }
 
-func convertAndPlay(ctx context.Context, client *elevenlabs.Client, opts speakOptions, payload elevenlabs.TTSRequest) (int64, error) {
+func convertAndPlay(ctx context.Context, client tts.Provider, opts speakOptions, payload tts.TTSRequest) (int64, error) {
 	data, err := client.ConvertTTS(ctx, opts.voiceID, payload)
 	if err != nil {
 		return 0, err
@@ -522,7 +539,7 @@ func convertAndPlay(ctx context.Context, client *elevenlabs.Client, opts speakOp
 	return n, nil
 }
 
-func resolveVoice(ctx context.Context, client *elevenlabs.Client, voiceInput string, forceID bool) (string, error) {
+func resolveVoice(ctx context.Context, client tts.Provider, voiceInput string, forceID bool) (string, error) {
 	voiceInput = strings.TrimSpace(voiceInput)
 	if voiceInput == "" {
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)

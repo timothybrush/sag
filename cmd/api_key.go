@@ -6,23 +6,39 @@ import (
 	"strings"
 )
 
+// resolveElevenLabsKey resolves the ElevenLabs API key without erroring when
+// absent (returns ""). Order: --api-key, key file, ELEVENLABS_API_KEY,
+// SAG_API_KEY.
+func resolveElevenLabsKey() (string, error) {
+	if cfg.APIKey != "" {
+		return cfg.APIKey, nil
+	}
+	key, err := resolveAPIKeyFromFile()
+	if err != nil {
+		return "", err
+	}
+	if key != "" {
+		return key, nil
+	}
+	if v := os.Getenv("ELEVENLABS_API_KEY"); v != "" {
+		return v, nil
+	}
+	if v := os.Getenv("SAG_API_KEY"); v != "" {
+		return v, nil
+	}
+	return "", nil
+}
+
+// ensureAPIKey resolves and stores the ElevenLabs API key, erroring if missing.
 func ensureAPIKey() error {
-	if cfg.APIKey == "" {
-		key, err := resolveAPIKeyFromFile()
-		if err != nil {
-			return err
-		}
-		cfg.APIKey = key
+	key, err := resolveElevenLabsKey()
+	if err != nil {
+		return err
 	}
-	if cfg.APIKey == "" {
-		cfg.APIKey = os.Getenv("ELEVENLABS_API_KEY")
-	}
-	if cfg.APIKey == "" {
-		cfg.APIKey = os.Getenv("SAG_API_KEY")
-	}
-	if cfg.APIKey == "" {
+	if key == "" {
 		return fmt.Errorf("missing ElevenLabs API key (set --api-key, --api-key-file, or ELEVENLABS_API_KEY)")
 	}
+	cfg.APIKey = key
 	return nil
 }
 

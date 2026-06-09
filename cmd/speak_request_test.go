@@ -33,7 +33,7 @@ func newSpeakTestCommand(t *testing.T) (*cobra.Command, *speakOptions) {
 func TestBuildTTSRequest_DefaultsOmitOptionalFields(t *testing.T) {
 	cmd, opts := newSpeakTestCommand(t)
 
-	req, err := buildTTSRequest(cmd, *opts, "hello")
+	req, err := buildTTSRequest(cmd, *opts, "hello", providerElevenLabs)
 	if err != nil {
 		t.Fatalf("buildTTSRequest error: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestBuildTTSRequest_SimilarityBoostAlias(t *testing.T) {
 		t.Fatalf("parse flags: %v", err)
 	}
 
-	req, err := buildTTSRequest(cmd, *opts, "hello")
+	req, err := buildTTSRequest(cmd, *opts, "hello", providerElevenLabs)
 	if err != nil {
 		t.Fatalf("buildTTSRequest error: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestBuildTTSRequest_SpeakerBoostSetsJSONKey(t *testing.T) {
 		t.Fatalf("parse flags: %v", err)
 	}
 
-	req, err := buildTTSRequest(cmd, *opts, "hello")
+	req, err := buildTTSRequest(cmd, *opts, "hello", providerElevenLabs)
 	if err != nil {
 		t.Fatalf("buildTTSRequest error: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestBuildTTSRequest_InvalidNormalize(t *testing.T) {
 	if err := cmd.Flags().Parse([]string{"--normalize", "wat"}); err != nil {
 		t.Fatalf("parse flags: %v", err)
 	}
-	_, err := buildTTSRequest(cmd, *opts, "hello")
+	_, err := buildTTSRequest(cmd, *opts, "hello", providerElevenLabs)
 	if err == nil || !strings.Contains(err.Error(), "normalize must be one of") {
 		t.Fatalf("expected normalize error, got %v", err)
 	}
@@ -118,7 +118,7 @@ func TestBuildTTSRequest_InvalidLang(t *testing.T) {
 	if err := cmd.Flags().Parse([]string{"--lang", "eng"}); err != nil {
 		t.Fatalf("parse flags: %v", err)
 	}
-	_, err := buildTTSRequest(cmd, *opts, "hello")
+	_, err := buildTTSRequest(cmd, *opts, "hello", providerElevenLabs)
 	if err == nil || !strings.Contains(err.Error(), "lang must be a 2-letter") {
 		t.Fatalf("expected lang error, got %v", err)
 	}
@@ -129,7 +129,7 @@ func TestBuildTTSRequest_InvalidSeed(t *testing.T) {
 	if err := cmd.Flags().Parse([]string{"--seed", "4294967296"}); err != nil {
 		t.Fatalf("parse flags: %v", err)
 	}
-	_, err := buildTTSRequest(cmd, *opts, "hello")
+	_, err := buildTTSRequest(cmd, *opts, "hello", providerElevenLabs)
 	if err == nil || !strings.Contains(err.Error(), "seed must be between") {
 		t.Fatalf("expected seed error, got %v", err)
 	}
@@ -140,7 +140,7 @@ func TestBuildTTSRequest_SpeakerBoostConflict(t *testing.T) {
 	if err := cmd.Flags().Parse([]string{"--speaker-boost", "--no-speaker-boost"}); err != nil {
 		t.Fatalf("parse flags: %v", err)
 	}
-	_, err := buildTTSRequest(cmd, *opts, "hello")
+	_, err := buildTTSRequest(cmd, *opts, "hello", providerElevenLabs)
 	if err == nil || !strings.Contains(err.Error(), "choose only one") {
 		t.Fatalf("expected conflict error, got %v", err)
 	}
@@ -152,7 +152,7 @@ func TestBuildTTSRequest_V3StabilityPresetsOnly(t *testing.T) {
 	if err := cmd.Flags().Parse([]string{"--stability", "0.55"}); err != nil {
 		t.Fatalf("parse flags: %v", err)
 	}
-	_, err := buildTTSRequest(cmd, *opts, "hello")
+	_, err := buildTTSRequest(cmd, *opts, "hello", providerElevenLabs)
 	if err == nil || !strings.Contains(err.Error(), "for eleven_v3, stability must be one of") {
 		t.Fatalf("expected v3 stability preset error, got %v", err)
 	}

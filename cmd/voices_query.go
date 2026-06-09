@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/steipete/sag/internal/elevenlabs"
+	"github.com/steipete/sag/internal/tts"
 )
 
 type labelFilter struct {
@@ -38,11 +38,11 @@ func parseLabelFilters(filters []string) ([]labelFilter, error) {
 	return parsed, nil
 }
 
-func filterVoicesByLabels(voices []elevenlabs.Voice, filters []labelFilter) []elevenlabs.Voice {
+func filterVoicesByLabels(voices []tts.Voice, filters []labelFilter) []tts.Voice {
 	if len(filters) == 0 {
 		return voices
 	}
-	filtered := make([]elevenlabs.Voice, 0, len(voices))
+	filtered := make([]tts.Voice, 0, len(voices))
 	for _, v := range voices {
 		if matchesAllLabels(v, filters) {
 			filtered = append(filtered, v)
@@ -51,7 +51,7 @@ func filterVoicesByLabels(voices []elevenlabs.Voice, filters []labelFilter) []el
 	return filtered
 }
 
-func matchesAllLabels(voice elevenlabs.Voice, filters []labelFilter) bool {
+func matchesAllLabels(voice tts.Voice, filters []labelFilter) bool {
 	if len(filters) == 0 {
 		return true
 	}
@@ -85,7 +85,7 @@ func labelValue(labels map[string]string, key string) (string, bool) {
 	return "", false
 }
 
-func rankVoicesByQuery(voices []elevenlabs.Voice, query string) []elevenlabs.Voice {
+func rankVoicesByQuery(voices []tts.Voice, query string) []tts.Voice {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return voices
@@ -104,7 +104,7 @@ func rankVoicesByQuery(voices []elevenlabs.Voice, query string) []elevenlabs.Voi
 		}
 		return scored[i].score > scored[j].score
 	})
-	ranked := make([]elevenlabs.Voice, 0, len(scored))
+	ranked := make([]tts.Voice, 0, len(scored))
 	for _, s := range scored {
 		ranked = append(ranked, s.voice)
 	}
@@ -112,11 +112,11 @@ func rankVoicesByQuery(voices []elevenlabs.Voice, query string) []elevenlabs.Voi
 }
 
 type scoredVoice struct {
-	voice elevenlabs.Voice
+	voice tts.Voice
 	score int
 }
 
-func scoreVoice(voice elevenlabs.Voice, query string, tokens []string) int {
+func scoreVoice(voice tts.Voice, query string, tokens []string) int {
 	name := strings.ToLower(voice.Name)
 	desc := strings.ToLower(voice.Description)
 	labels := strings.ToLower(flattenLabels(voice.Labels))

@@ -24,9 +24,24 @@ sudo apt install build-essential pkg-config libasound2-dev
 ```
 
 ## Configuration
-- `ELEVENLABS_API_KEY` (required)
-- `--api-key-file` or `ELEVENLABS_API_KEY_FILE`/`SAG_API_KEY_FILE` to load the key from a file
-- Optional defaults: `ELEVENLABS_VOICE_ID` or `SAG_VOICE_ID`
+
+`sag` supports two TTS providers and auto-selects one from whichever API key is set:
+
+- **ElevenLabs** — `ELEVENLABS_API_KEY` (or `--api-key`, or `--api-key-file` / `ELEVENLABS_API_KEY_FILE` / `SAG_API_KEY_FILE`)
+- **60db** (`api.60db.ai`) — `SIXTYDB_API_KEY` (or `SIXTYDB_API_KEY_FILE`)
+
+Selection rules:
+- Only one key set → that provider is used.
+- Both keys set → ElevenLabs is used (unset `ELEVENLABS_API_KEY` to use 60db); a note is printed.
+- Neither set → error.
+
+Optional defaults: `ELEVENLABS_VOICE_ID` or `SAG_VOICE_ID`. Override a provider's host with `--base-url`.
+
+The same flags work for both providers; `sag` translates them to each API. A few flags are
+ElevenLabs-only and are accepted-but-ignored on 60db (a note is printed): `--model-id`,
+`--style`, `--speaker-boost`/`--no-speaker-boost`, `--seed`, `--normalize`, `--lang`,
+`--latency-tier`. The `--stability`/`--similarity` `0..1` values are scaled to 60db's `0..100`
+range automatically. See [docs/providers.md](docs/providers.md) for details.
 
 ## Usage
 

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/steipete/sag/internal/elevenlabs"
+	"github.com/steipete/sag/internal/tts"
 )
 
 const (
@@ -25,8 +25,8 @@ type voiceCache struct {
 }
 
 type cachedVoice struct {
-	Voice     elevenlabs.Voice `json:"voice"`
-	UpdatedAt time.Time        `json:"updated_at"`
+	Voice     tts.Voice `json:"voice"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func newVoiceCache() *voiceCache {
@@ -80,7 +80,7 @@ func saveVoiceCache(path string, cache *voiceCache) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
-func hydrateVoices(ctx context.Context, client *elevenlabs.Client, voices []elevenlabs.Voice, cache *voiceCache, ttl time.Duration) ([]elevenlabs.Voice, int) {
+func hydrateVoices(ctx context.Context, client tts.Provider, voices []tts.Voice, cache *voiceCache, ttl time.Duration) ([]tts.Voice, int) {
 	if ttl <= 0 {
 		ttl = voiceCacheTTL
 	}
@@ -88,7 +88,7 @@ func hydrateVoices(ctx context.Context, client *elevenlabs.Client, voices []elev
 		cache = newVoiceCache()
 	}
 
-	results := make([]elevenlabs.Voice, len(voices))
+	results := make([]tts.Voice, len(voices))
 	now := time.Now()
 
 	var metaCount int
@@ -109,7 +109,7 @@ func hydrateVoices(ctx context.Context, client *elevenlabs.Client, voices []elev
 
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(index int, voice elevenlabs.Voice) {
+		go func(index int, voice tts.Voice) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
@@ -135,7 +135,7 @@ func hydrateVoices(ctx context.Context, client *elevenlabs.Client, voices []elev
 	return results, metaCount
 }
 
-func mergeVoice(base elevenlabs.Voice, details elevenlabs.Voice) elevenlabs.Voice {
+func mergeVoice(base tts.Voice, details tts.Voice) tts.Voice {
 	merged := base
 	if details.VoiceID != "" {
 		merged.VoiceID = details.VoiceID
