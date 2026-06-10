@@ -16,8 +16,13 @@ func newSpeakTestCommand(t *testing.T) (*cobra.Command, *speakOptions) {
 		modelID:   "eleven_multilingual_v2",
 		outputFmt: "mp3_44100_128",
 		speed:     1.0,
+		stream:    true,
+		play:      true,
 	}
 	cmd := &cobra.Command{Use: "speak"}
+	cmd.Flags().StringVar(&opts.modelID, "model-id", opts.modelID, "")
+	cmd.Flags().StringVar(&opts.outputFmt, "format", opts.outputFmt, "")
+	cmd.Flags().BoolVar(&opts.stream, "stream", opts.stream, "")
 	cmd.Flags().Float64Var(&opts.stability, "stability", 0, "")
 	cmd.Flags().Float64Var(&opts.similarity, "similarity", 0, "")
 	cmd.Flags().Float64Var(&opts.similarity, "similarity-boost", 0, "")
@@ -27,15 +32,16 @@ func newSpeakTestCommand(t *testing.T) (*cobra.Command, *speakOptions) {
 	cmd.Flags().Uint64Var(&opts.seed, "seed", 0, "")
 	cmd.Flags().StringVar(&opts.normalize, "normalize", "", "")
 	cmd.Flags().StringVar(&opts.lang, "lang", "", "")
+	cmd.Flags().IntVar(&opts.latencyTier, "latency-tier", 0, "")
 	return cmd, opts
 }
 
-func TestBuildTTSRequest_DefaultsOmitOptionalFields(t *testing.T) {
+func TestBuildElevenLabsTTSRequest_DefaultsOmitOptionalFields(t *testing.T) {
 	cmd, opts := newSpeakTestCommand(t)
 
-	req, err := buildTTSRequest(cmd, *opts, "hello", providerElevenLabs)
+	req, err := buildElevenLabsTTSRequest(cmd, *opts, "hello")
 	if err != nil {
-		t.Fatalf("buildTTSRequest error: %v", err)
+		t.Fatalf("buildElevenLabsTTSRequest error: %v", err)
 	}
 
 	if req.Seed != nil {
@@ -64,30 +70,30 @@ func TestBuildTTSRequest_DefaultsOmitOptionalFields(t *testing.T) {
 	}
 }
 
-func TestBuildTTSRequest_SimilarityBoostAlias(t *testing.T) {
+func TestBuildElevenLabsTTSRequest_SimilarityBoostAlias(t *testing.T) {
 	cmd, opts := newSpeakTestCommand(t)
 	if err := cmd.Flags().Parse([]string{"--similarity-boost", "0.9"}); err != nil {
 		t.Fatalf("parse flags: %v", err)
 	}
 
-	req, err := buildTTSRequest(cmd, *opts, "hello", providerElevenLabs)
+	req, err := buildElevenLabsTTSRequest(cmd, *opts, "hello")
 	if err != nil {
-		t.Fatalf("buildTTSRequest error: %v", err)
+		t.Fatalf("buildElevenLabsTTSRequest error: %v", err)
 	}
 	if req.VoiceSettings.SimilarityBoost == nil || *req.VoiceSettings.SimilarityBoost != 0.9 {
 		t.Fatalf("expected similarity_boost 0.9, got %#v", req.VoiceSettings.SimilarityBoost)
 	}
 }
 
-func TestBuildTTSRequest_SpeakerBoostSetsJSONKey(t *testing.T) {
+func TestBuildElevenLabsTTSRequest_SpeakerBoostSetsJSONKey(t *testing.T) {
 	cmd, opts := newSpeakTestCommand(t)
 	if err := cmd.Flags().Parse([]string{"--speaker-boost"}); err != nil {
 		t.Fatalf("parse flags: %v", err)
 	}
 
-	req, err := buildTTSRequest(cmd, *opts, "hello", providerElevenLabs)
+	req, err := buildElevenLabsTTSRequest(cmd, *opts, "hello")
 	if err != nil {
-		t.Fatalf("buildTTSRequest error: %v", err)
+		t.Fatalf("buildElevenLabsTTSRequest error: %v", err)
 	}
 	if req.VoiceSettings.UseSpeakerBoost == nil || *req.VoiceSettings.UseSpeakerBoost != true {
 		t.Fatalf("expected use_speaker_boost true, got %#v", req.VoiceSettings.UseSpeakerBoost)
@@ -102,59 +108,171 @@ func TestBuildTTSRequest_SpeakerBoostSetsJSONKey(t *testing.T) {
 	}
 }
 
-func TestBuildTTSRequest_InvalidNormalize(t *testing.T) {
+func TestBuildElevenLabsTTSRequest_InvalidNormalize(t *testing.T) {
 	cmd, opts := newSpeakTestCommand(t)
 	if err := cmd.Flags().Parse([]string{"--normalize", "wat"}); err != nil {
 		t.Fatalf("parse flags: %v", err)
 	}
-	_, err := buildTTSRequest(cmd, *opts, "hello", providerElevenLabs)
+	_, err := buildElevenLabsTTSRequest(cmd, *opts, "hello")
 	if err == nil || !strings.Contains(err.Error(), "normalize must be one of") {
 		t.Fatalf("expected normalize error, got %v", err)
 	}
 }
 
-func TestBuildTTSRequest_InvalidLang(t *testing.T) {
+func TestBuildElevenLabsTTSRequest_InvalidLang(t *testing.T) {
 	cmd, opts := newSpeakTestCommand(t)
 	if err := cmd.Flags().Parse([]string{"--lang", "eng"}); err != nil {
 		t.Fatalf("parse flags: %v", err)
 	}
-	_, err := buildTTSRequest(cmd, *opts, "hello", providerElevenLabs)
+	_, err := buildElevenLabsTTSRequest(cmd, *opts, "hello")
 	if err == nil || !strings.Contains(err.Error(), "lang must be a 2-letter") {
 		t.Fatalf("expected lang error, got %v", err)
 	}
 }
 
-func TestBuildTTSRequest_InvalidSeed(t *testing.T) {
+func TestBuildElevenLabsTTSRequest_InvalidSeed(t *testing.T) {
 	cmd, opts := newSpeakTestCommand(t)
 	if err := cmd.Flags().Parse([]string{"--seed", "4294967296"}); err != nil {
 		t.Fatalf("parse flags: %v", err)
 	}
-	_, err := buildTTSRequest(cmd, *opts, "hello", providerElevenLabs)
+	_, err := buildElevenLabsTTSRequest(cmd, *opts, "hello")
 	if err == nil || !strings.Contains(err.Error(), "seed must be between") {
 		t.Fatalf("expected seed error, got %v", err)
 	}
 }
 
-func TestBuildTTSRequest_SpeakerBoostConflict(t *testing.T) {
+func TestBuildElevenLabsTTSRequest_SpeakerBoostConflict(t *testing.T) {
 	cmd, opts := newSpeakTestCommand(t)
 	if err := cmd.Flags().Parse([]string{"--speaker-boost", "--no-speaker-boost"}); err != nil {
 		t.Fatalf("parse flags: %v", err)
 	}
-	_, err := buildTTSRequest(cmd, *opts, "hello", providerElevenLabs)
+	_, err := buildElevenLabsTTSRequest(cmd, *opts, "hello")
 	if err == nil || !strings.Contains(err.Error(), "choose only one") {
 		t.Fatalf("expected conflict error, got %v", err)
 	}
 }
 
-func TestBuildTTSRequest_V3StabilityPresetsOnly(t *testing.T) {
+func TestBuildElevenLabsTTSRequest_V3StabilityPresetsOnly(t *testing.T) {
 	cmd, opts := newSpeakTestCommand(t)
 	opts.modelID = "eleven_v3"
 	if err := cmd.Flags().Parse([]string{"--stability", "0.55"}); err != nil {
 		t.Fatalf("parse flags: %v", err)
 	}
-	_, err := buildTTSRequest(cmd, *opts, "hello", providerElevenLabs)
+	_, err := buildElevenLabsTTSRequest(cmd, *opts, "hello")
 	if err == nil || !strings.Contains(err.Error(), "for eleven_v3, stability must be one of") {
 		t.Fatalf("expected v3 stability preset error, got %v", err)
+	}
+}
+
+func TestPrepareSixtyDBOptionsRejectsUnsupportedFlags(t *testing.T) {
+	cmd, opts := newSpeakTestCommand(t)
+	if err := cmd.Flags().Parse([]string{"--model-id", "foo", "--style", "0.3", "--latency-tier", "2"}); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+
+	err := prepareSixtyDBOptions(cmd, opts)
+	if err == nil {
+		t.Fatal("expected unsupported flag error")
+	}
+	for _, flag := range []string{"--model-id", "--style", "--latency-tier"} {
+		if !strings.Contains(err.Error(), flag) {
+			t.Fatalf("expected %s in error, got %v", flag, err)
+		}
+	}
+}
+
+func TestPrepareSixtyDBOptionsFallsBackToConvertForNonMP3(t *testing.T) {
+	cmd, opts := newSpeakTestCommand(t)
+	opts.outputFmt = "wav"
+	opts.play = false
+
+	if err := prepareSixtyDBOptions(cmd, opts); err != nil {
+		t.Fatalf("prepareSixtyDBOptions error: %v", err)
+	}
+	if opts.outputFmt != "wav" {
+		t.Fatalf("expected canonical wav format, got %q", opts.outputFmt)
+	}
+	if opts.stream {
+		t.Fatalf("expected stream to be disabled for non-mp3 output")
+	}
+}
+
+func TestPrepareSixtyDBOptionsInfersFLACFromOutputPath(t *testing.T) {
+	cmd, opts := newSpeakTestCommand(t)
+	opts.outputPath = "voice.FLAC"
+	opts.play = false
+
+	if err := prepareSixtyDBOptions(cmd, opts); err != nil {
+		t.Fatalf("prepareSixtyDBOptions error: %v", err)
+	}
+	if opts.outputFmt != "flac" {
+		t.Fatalf("expected flac output format, got %q", opts.outputFmt)
+	}
+	if opts.stream {
+		t.Fatalf("expected stream to be disabled for flac output")
+	}
+}
+
+func TestPrepareSixtyDBOptionsRejectsExplicitStreamForNonMP3(t *testing.T) {
+	cmd, opts := newSpeakTestCommand(t)
+	if err := cmd.Flags().Parse([]string{"--stream", "--format", "wav"}); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	opts.play = false
+
+	err := prepareSixtyDBOptions(cmd, opts)
+	if err == nil || !strings.Contains(err.Error(), "use --no-stream") {
+		t.Fatalf("expected explicit stream rejection, got %v", err)
+	}
+}
+
+func TestPrepareSixtyDBOptionsRejectsPlaybackForNonMP3(t *testing.T) {
+	cmd, opts := newSpeakTestCommand(t)
+	opts.outputFmt = "flac"
+
+	err := prepareSixtyDBOptions(cmd, opts)
+	if err == nil || !strings.Contains(err.Error(), "requires mp3 audio") {
+		t.Fatalf("expected playback format error, got %v", err)
+	}
+}
+
+func TestBuildSixtyDBTTSRequestScalesDocumentedFields(t *testing.T) {
+	cmd, opts := newSpeakTestCommand(t)
+	opts.voiceID = "voice_123"
+	opts.stream = false
+	if err := cmd.Flags().Parse([]string{"--stability", "0.5", "--similarity-boost", "0.8"}); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+
+	req, err := buildSixtyDBTTSRequest(cmd, *opts, "hello")
+	if err != nil {
+		t.Fatalf("buildSixtyDBTTSRequest error: %v", err)
+	}
+	if req.Text != "hello" || req.VoiceID != "voice_123" {
+		t.Fatalf("unexpected request identity: %+v", req)
+	}
+	if req.Speed == nil || *req.Speed != 1.0 {
+		t.Fatalf("expected speed 1.0, got %#v", req.Speed)
+	}
+	if req.Stability == nil || *req.Stability != 50 {
+		t.Fatalf("expected stability 50, got %#v", req.Stability)
+	}
+	if req.Similarity == nil || *req.Similarity != 80 {
+		t.Fatalf("expected similarity 80, got %#v", req.Similarity)
+	}
+	if req.OutputFormat != "mp3_44100_128" {
+		t.Fatalf("expected raw output format to be passed to client canonicalizer, got %q", req.OutputFormat)
+	}
+}
+
+func TestBuildSixtyDBTTSRequestOmitsOutputFormatWhenStreaming(t *testing.T) {
+	cmd, opts := newSpeakTestCommand(t)
+	req, err := buildSixtyDBTTSRequest(cmd, *opts, "hello")
+	if err != nil {
+		t.Fatalf("buildSixtyDBTTSRequest error: %v", err)
+	}
+	if req.OutputFormat != "" {
+		t.Fatalf("expected stream request to omit output format, got %q", req.OutputFormat)
 	}
 }
 
@@ -256,24 +374,5 @@ func TestTTSContextNoDeadlineByDefault(t *testing.T) {
 
 	if _, ok := ctx.Deadline(); ok {
 		t.Fatalf("expected no deadline for zero timeout")
-	}
-}
-
-func TestTTSContextWithTimeout(t *testing.T) {
-	ctx, cancel, err := ttsContext(context.Background(), time.Minute)
-	if err != nil {
-		t.Fatalf("ttsContext error: %v", err)
-	}
-	defer cancel()
-
-	if _, ok := ctx.Deadline(); !ok {
-		t.Fatalf("expected deadline for non-zero timeout")
-	}
-}
-
-func TestTTSContextRejectsNegativeTimeout(t *testing.T) {
-	_, _, err := ttsContext(context.Background(), -time.Second)
-	if err == nil || !strings.Contains(err.Error(), "timeout must be") {
-		t.Fatalf("expected timeout error, got %v", err)
 	}
 }

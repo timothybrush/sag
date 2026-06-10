@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+### Added
+- Documented 60db provider support via `/default-voices`, `/myvoices`, `/tts-stream`, and `/tts-synthesize`, with strict provider selection and response validation. (#20, thanks @manishEMS47)
 ### Changed
 - Release archives now include target-specific macOS and Linux assets for Homebrew and aqua installers.
 

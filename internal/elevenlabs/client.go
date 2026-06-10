@@ -21,9 +21,6 @@ type Client struct {
 	httpClient *http.Client
 }
 
-// Ensure the ElevenLabs client satisfies the shared provider contract.
-var _ tts.Provider = (*Client)(nil)
-
 // NewClient returns a Client configured with the given API key and base URL.
 func NewClient(apiKey, baseURL string) *Client {
 	if baseURL == "" {
@@ -36,16 +33,11 @@ func NewClient(apiKey, baseURL string) *Client {
 	}
 }
 
-// Voice, VoiceSettings, and TTSRequest are re-exported from the shared tts
-// package so existing callers (and tests) can keep using elevenlabs.Voice etc.
-// while every provider speaks the same types.
+// Voice is re-exported from the shared voice-catalog package so existing
+// callers can keep using elevenlabs.Voice while query/filter code stays shared.
 type (
 	// Voice represents a voice entry returned by ElevenLabs.
 	Voice = tts.Voice
-	// VoiceSettings tunes synthesis parameters for a request.
-	VoiceSettings = tts.VoiceSettings
-	// TTSRequest configures a text-to-speech request payload.
-	TTSRequest = tts.TTSRequest
 )
 
 type listVoicesResponse struct {
@@ -188,6 +180,26 @@ func (c *Client) GetVoice(ctx context.Context, voiceID string) (Voice, error) {
 		return Voice{}, err
 	}
 	return voice, nil
+}
+
+// TTSRequest configures a text-to-speech request payload.
+type TTSRequest struct {
+	Text                   string         `json:"text"`
+	ModelID                string         `json:"model_id,omitempty"`
+	VoiceSettings          *VoiceSettings `json:"voice_settings,omitempty"`
+	OutputFormat           string         `json:"output_format,omitempty"`
+	Seed                   *uint32        `json:"seed,omitempty"`
+	ApplyTextNormalization string         `json:"apply_text_normalization,omitempty"`
+	LanguageCode           string         `json:"language_code,omitempty"`
+}
+
+// VoiceSettings tunes synthesis parameters for a request.
+type VoiceSettings struct {
+	Stability       *float64 `json:"stability,omitempty"`
+	SimilarityBoost *float64 `json:"similarity_boost,omitempty"`
+	Style           *float64 `json:"style,omitempty"`
+	UseSpeakerBoost *bool    `json:"use_speaker_boost,omitempty"`
+	Speed           *float64 `json:"speed,omitempty"`
 }
 
 // StreamTTS requests streaming audio for text-to-speech.

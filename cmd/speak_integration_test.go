@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,8 @@ import (
 
 func TestSpeakCommand_FlagsBuildRequestAndMetrics(t *testing.T) {
 	t.Helper()
+	resetProviderEnv(t)
+	resetRootCommandState()
 
 	const voiceID = "abc1234567890123"
 
@@ -105,5 +108,65 @@ func TestSpeakCommand_FlagsBuildRequestAndMetrics(t *testing.T) {
 	stderr := read()
 	if !strings.Contains(stderr, "metrics: chars=") || !strings.Contains(stderr, "bytes=") || !strings.Contains(stderr, "dur=") {
 		t.Fatalf("expected metrics output, got %q", stderr)
+	}
+	if !strings.Contains(stderr, "provider=elevenlabs") || !strings.Contains(stderr, "model=eleven_v3") || !strings.Contains(stderr, "latencyTier=0") {
+		t.Fatalf("expected provider-specific metrics output, got %q", stderr)
+	}
+}
+
+func TestSpeakCommand_SixtyDBMetricsOmitElevenLabsModel(t *testing.T) {
+	t.Helper()
+	resetProviderEnv(t)
+	resetRootCommandState()
+	t.Setenv("SIXTYDB_API_KEY", "sd-key")
+
+	const voiceID = "voice-001"
+	audio := base64.StdEncoding.EncodeToString([]byte("ID3audio-bytes"))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/tts-synthesize" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		var got map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if got["voice_id"] != voiceID || got["output_format"] != "mp3" {
+			t.Fatalf("unexpected request body: %+v", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success":       true,
+			"audio_base64":  audio,
+			"output_format": "mp3",
+			"encoding":      "mp3",
+		})
+	}))
+	defer srv.Close()
+
+	tmp := t.TempDir()
+	outPath := tmp + "/out.mp3"
+	restore, read := captureStderr(t)
+	defer restore()
+
+	rootCmd.SetArgs([]string{
+		"--base-url", srv.URL,
+		"speak",
+		"--voice-id", voiceID,
+		"--stream=false",
+		"--play=false",
+		"--output", outPath,
+		"--metrics",
+		"Hello world",
+	})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("speak command failed: %v", err)
+	}
+
+	stderr := read()
+	if !strings.Contains(stderr, "provider=60db") {
+		t.Fatalf("expected 60db provider in metrics, got %q", stderr)
+	}
+	if strings.Contains(stderr, "model=eleven_v3") || strings.Contains(stderr, "latencyTier=") {
+		t.Fatalf("expected 60db metrics to omit ElevenLabs metadata, got %q", stderr)
 	}
 }

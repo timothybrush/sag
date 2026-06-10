@@ -316,9 +316,10 @@ func TestStreamAndPlayWritesOutput(t *testing.T) {
 	tmp := t.TempDir()
 	out := tmp + "/out.mp3"
 	opts := speakOptions{voiceID: "v1", outputPath: out, stream: true, play: false}
-	payload := elevenlabs.TTSRequest{Text: "hi"}
 
-	if _, err := streamAndPlay(context.Background(), client, opts, payload); err != nil {
+	if _, err := streamAndPlay(context.Background(), opts, func(ctx context.Context) (io.ReadCloser, error) {
+		return client.StreamTTS(ctx, opts.voiceID, elevenlabs.TTSRequest{Text: "hi"}, 0)
+	}); err != nil {
 		t.Fatalf("streamAndPlay error: %v", err)
 	}
 	data, err := os.ReadFile(out)
@@ -343,9 +344,10 @@ func TestConvertAndPlayWritesOutput(t *testing.T) {
 	tmp := t.TempDir()
 	out := tmp + "/out.mp3"
 	opts := speakOptions{voiceID: "v1", outputPath: out, play: false}
-	payload := elevenlabs.TTSRequest{Text: "hi"}
 
-	if _, err := convertAndPlay(context.Background(), client, opts, payload); err != nil {
+	if _, err := convertAndPlay(context.Background(), opts, func(ctx context.Context) ([]byte, error) {
+		return client.ConvertTTS(ctx, opts.voiceID, elevenlabs.TTSRequest{Text: "hi"})
+	}); err != nil {
 		t.Fatalf("convertAndPlay error: %v", err)
 	}
 	data, err := os.ReadFile(out)
@@ -358,11 +360,11 @@ func TestConvertAndPlayWritesOutput(t *testing.T) {
 }
 
 func TestStreamAndPlayRequiresWork(t *testing.T) {
-	client := elevenlabs.NewClient("key", "http://invalid")
 	opts := speakOptions{voiceID: "v1", play: false, stream: true}
-	payload := elevenlabs.TTSRequest{Text: "hi"}
-
-	_, err := streamAndPlay(context.Background(), client, opts, payload)
+	_, err := streamAndPlay(context.Background(), opts, func(context.Context) (io.ReadCloser, error) {
+		t.Fatal("stream should not be invoked when nothing will consume it")
+		return nil, nil
+	})
 	if err == nil {
 		t.Fatalf("expected error when no output and play disabled")
 	}
@@ -385,9 +387,10 @@ func TestStreamAndPlayWithPlayback(t *testing.T) {
 
 	client := elevenlabs.NewClient("key", srv.URL)
 	opts := speakOptions{voiceID: "v1", play: true, stream: true}
-	payload := elevenlabs.TTSRequest{Text: "hi"}
 
-	if _, err := streamAndPlay(context.Background(), client, opts, payload); err != nil {
+	if _, err := streamAndPlay(context.Background(), opts, func(ctx context.Context) (io.ReadCloser, error) {
+		return client.StreamTTS(ctx, opts.voiceID, elevenlabs.TTSRequest{Text: "hi"}, 0)
+	}); err != nil {
 		t.Fatalf("streamAndPlay error: %v", err)
 	}
 	if !called {
@@ -412,9 +415,10 @@ func TestConvertAndPlayWithPlayback(t *testing.T) {
 
 	client := elevenlabs.NewClient("key", srv.URL)
 	opts := speakOptions{voiceID: "v1", play: true, outputPath: "", stream: false}
-	payload := elevenlabs.TTSRequest{Text: "hi"}
 
-	if _, err := convertAndPlay(context.Background(), client, opts, payload); err != nil {
+	if _, err := convertAndPlay(context.Background(), opts, func(ctx context.Context) ([]byte, error) {
+		return client.ConvertTTS(ctx, opts.voiceID, elevenlabs.TTSRequest{Text: "hi"})
+	}); err != nil {
 		t.Fatalf("convertAndPlay error: %v", err)
 	}
 	if !called {

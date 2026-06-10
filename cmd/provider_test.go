@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -25,12 +26,12 @@ func TestSelectProvider_ElevenLabsOnly(t *testing.T) {
 	resetProviderEnv(t)
 	t.Setenv("ELEVENLABS_API_KEY", "el-key")
 
-	_, name, err := selectProvider()
+	provider, err := selectProvider()
 	if err != nil {
 		t.Fatalf("selectProvider error: %v", err)
 	}
-	if name != providerElevenLabs {
-		t.Fatalf("expected %q, got %q", providerElevenLabs, name)
+	if provider.name != providerElevenLabs || provider.elevenlabs == nil || provider.voices == nil {
+		t.Fatalf("unexpected provider: %+v", provider)
 	}
 }
 
@@ -38,33 +39,30 @@ func TestSelectProvider_SixtyDBOnly(t *testing.T) {
 	resetProviderEnv(t)
 	t.Setenv("SIXTYDB_API_KEY", "sd-key")
 
-	_, name, err := selectProvider()
+	provider, err := selectProvider()
 	if err != nil {
 		t.Fatalf("selectProvider error: %v", err)
 	}
-	if name != providerSixtyDB {
-		t.Fatalf("expected %q, got %q", providerSixtyDB, name)
+	if provider.name != providerSixtyDB || provider.sixtydb == nil || provider.voices == nil {
+		t.Fatalf("unexpected provider: %+v", provider)
 	}
 }
 
-func TestSelectProvider_BothPrefersElevenLabs(t *testing.T) {
+func TestSelectProvider_BothKeysError(t *testing.T) {
 	resetProviderEnv(t)
 	t.Setenv("ELEVENLABS_API_KEY", "el-key")
 	t.Setenv("SIXTYDB_API_KEY", "sd-key")
 
-	_, name, err := selectProvider()
-	if err != nil {
-		t.Fatalf("selectProvider error: %v", err)
-	}
-	if name != providerElevenLabs {
-		t.Fatalf("expected ElevenLabs to win tiebreak, got %q", name)
+	_, err := selectProvider()
+	if err == nil || !strings.Contains(err.Error(), "ambiguous provider configuration") {
+		t.Fatalf("expected ambiguity error, got %v", err)
 	}
 }
 
 func TestSelectProvider_NeitherErrors(t *testing.T) {
 	resetProviderEnv(t)
 
-	_, _, err := selectProvider()
+	_, err := selectProvider()
 	if err == nil {
 		t.Fatal("expected error when no API key is set")
 	}

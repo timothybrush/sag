@@ -80,7 +80,7 @@ func saveVoiceCache(path string, cache *voiceCache) error {
 	return os.WriteFile(path, data, 0o644)
 }
 
-func hydrateVoices(ctx context.Context, client tts.Provider, voices []tts.Voice, cache *voiceCache, ttl time.Duration) ([]tts.Voice, int) {
+func hydrateVoices(ctx context.Context, client tts.VoiceCatalog, voices []tts.Voice, cache *voiceCache, ttl time.Duration) ([]tts.Voice, int) {
 	if ttl <= 0 {
 		ttl = voiceCacheTTL
 	}
@@ -150,7 +150,12 @@ func mergeVoice(base tts.Voice, details tts.Voice) tts.Voice {
 		merged.Description = details.Description
 	}
 	if len(details.Labels) > 0 {
-		merged.Labels = details.Labels
+		if len(merged.Labels) == 0 {
+			merged.Labels = map[string]string{}
+		}
+		for key, value := range details.Labels {
+			merged.Labels[key] = value
+		}
 	}
 	if details.PreviewURL != "" {
 		merged.PreviewURL = details.PreviewURL

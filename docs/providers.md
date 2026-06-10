@@ -1,67 +1,74 @@
 # Providers
 
-`sag` speaks to two text-to-speech backends behind one consistent CLI. A small
-provider abstraction (`internal/tts.Provider`) lets the command layer and the
-audio player stay backend-agnostic; each provider translates the shared request
-to and from its own wire format.
+`sag` supports two HTTP TTS backends. The CLI auto-selects the provider from your configured credentials; there is no `--provider` flag.
 
 ## Selecting a provider
 
-The provider is auto-detected from whichever API key is present — there is no
-`--provider` flag.
-
 | Keys set | Active provider |
-|---|---|
-| `ELEVENLABS_API_KEY` (or `--api-key`/file) only | ElevenLabs |
-| `SIXTYDB_API_KEY` (or `SIXTYDB_API_KEY_FILE`) only | 60db |
-| both | ElevenLabs (note printed; unset `ELEVENLABS_API_KEY` to use 60db) |
+| --- | --- |
+| `ELEVENLABS_API_KEY` / `SAG_API_KEY` or `--api-key` / `--api-key-file` only | ElevenLabs |
+| `SIXTYDB_API_KEY` or `SIXTYDB_API_KEY_FILE` only | 60db |
+| both | error |
 | neither | error |
 
-Override the host for the active provider with `--base-url`.
+Use `--base-url` to override the active provider host.
 
-## What each provider implements
+## 60db routes sag uses
 
-| Capability | ElevenLabs | 60db |
-|---|---|---|
-| Auth | `xi-api-key: <key>` | `Authorization: Bearer <key>` |
-| Default host | `https://api.elevenlabs.io` | `https://api.60db.ai` |
-| List voices | `GET /v1/voices` | `GET /myvoices` |
-| Full synthesis | `POST /v1/text-to-speech/{id}` (raw audio) | `POST /tts-synthesize` (base64 in JSON) |
-| Streaming | `POST /v1/text-to-speech/{id}/stream` (raw audio) | `POST /tts-stream` (NDJSON, base64 chunks) |
+The 60db integration is deliberately limited to the documented REST contract:
 
-For 60db, `sag` decodes the base64/NDJSON envelope internally, so streaming and
-file output behave the same as ElevenLabs. 60db's WebSocket API is not used.
+| Capability | Route | Notes |
+| --- | --- | --- |
+| Voice listing | `GET /default-voices` | Workspace-default voices; queried first. |
+| Voice listing | `GET /myvoices` | User-created voices; appended after defaults and deduped by `voice_id`. |
+| Streaming speak | `POST /tts-stream` | NDJSON stream of base64 chunks; no `output_format` field in the request. |
+| Full speak | `POST /tts-synthesize` | JSON envelope with `audio_base64`, `encoding`, and `output_format`. |
+
+For 60db, `sag` validates the JSON `success` envelope even on HTTP 200 responses, decodes base64/NDJSON audio internally, rejects malformed or empty audio, and enforces per-chunk, per-frame, and total-audio limits.
 
 ## Flag behavior
 
-Flags are written in ElevenLabs terms and translated per provider so the same
-command works on both.
+### Supported on both providers
 
-| Flag | ElevenLabs | 60db |
-|---|---|---|
-| `--speed` / `--rate` | speed multiplier `0.5–2.0` | passthrough (same range) |
-| `--stability` | `0..1` | scaled to `0..100` |
-| `--similarity` / `--similarity-boost` | `0..1` | scaled to `0..100` |
-| `--format` / `-o` extension | `mp3_44100_128`, `pcm_44100`, … | mapped to `mp3` / `wav` / `ogg` / `flac` |
-| `--model-id` | model id (e.g. `eleven_v3`) | ignored (model is tied to the voice) |
-| `--style` | style exaggeration | ignored |
-| `--speaker-boost` / `--no-speaker-boost` | speaker boost | ignored |
-| `--seed` | best-effort determinism | ignored |
-| `--normalize` | text normalization | ignored |
-| `--lang` | language code | ignored |
-| `--latency-tier` | streaming latency tier | ignored |
+- `-v, --voice`
+- `-r, --rate`
+- `--speed`
+- `--stability`
+- `--similarity` / `--similarity-boost`
+- `--format`
+- `--stream` / `--no-stream`
+- `--play` / `--no-play`
+- `-o, --output`
+- `--timeout`
+- `--metrics`
 
-When you set an ignored flag while 60db is active, `sag` prints a one-line note
-to stderr rather than failing.
+### ElevenLabs-only
 
-## Notes and limits
+These flags are passed through to ElevenLabs and rejected on 60db:
 
-- **Playback format:** speaker playback decodes MP3, so when playing through
-  speakers `sag` requests MP3 from 60db regardless of `--format`. Use
-  `--no-play -o file.<ext>` to save other formats.
-- **Voice previews:** `sag voices --try` is not available for 60db (its
-  `/myvoices` response has no preview URL); the affected voice is skipped with a
-  message.
-- **Voice metadata:** 60db's per-voice `model` (`60db Fast` / `60db Quality`) is
-  exposed as a `model` label, so `--label model=...` and `--query` can match it.
-- **Text limit:** 60db caps synthesis at 5,000 characters per request.
+- `--model-id`
+- `--style`
+- `--speaker-boost`
+- `--no-speaker-boost`
+- `--seed`
+- `--normalize`
+- `--lang`
+- `--latency-tier`
+
+### Parameter translation
+
+- `--stability` and `--similarity` stay in the CLI's `0..1` range and are scaled to 60db's documented `0..100` request values.
+- `--format` is canonicalized for 60db full synthesis: `mp3_*` → `mp3`, `pcm_*` / `wav` → `wav`, `opus_*` / `ogg` → `ogg`, `flac` → `flac`.
+
+## Streaming, files, and playback
+
+- ElevenLabs can stream in the requested output format, so `--stream` and `--format` work together.
+- 60db streaming is used only for the default MP3 path because `/tts-stream` does not document `output_format`.
+- On 60db, if the effective output format is non-MP3 and streaming was only enabled by the default, `sag` automatically falls back to `POST /tts-synthesize`.
+- On 60db, `--stream` plus a non-MP3 format is an error when you explicitly force `--stream`.
+- On 60db, `--play` requires MP3 output. Use `--no-play -o out.wav` (or `ogg` / `flac`) for other formats.
+
+## Voice metadata notes
+
+- `sag voices --try` uses `GET /voices/:id` on 60db to fetch `sample_url` when the list responses do not include preview URLs.
+- 60db voice `model` and `categories` values are exposed as CLI labels so `--query` and `--label model=...` still work.

@@ -53,10 +53,11 @@ func init() {
 				return errors.New("--try requires --search, --query, --label, or --limit to avoid playing all voices")
 			}
 
-			client, _, err := selectProvider()
+			provider, err := selectProvider()
 			if err != nil {
 				return err
 			}
+			client := provider.voices
 			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 			defer cancel()
 
@@ -182,7 +183,7 @@ func filterVoicesByName(voices []tts.Voice, search string) []tts.Voice {
 	return filtered
 }
 
-func playVoicePreviewImpl(ctx context.Context, client tts.Provider, voice tts.Voice) error {
+func playVoicePreviewImpl(ctx context.Context, client tts.VoiceCatalog, voice tts.Voice) error {
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 

@@ -1,12 +1,12 @@
 ---
 title: Overview
 permalink: /
-description: "sag is a Go CLI that turns text into ElevenLabs speech the way macOS `say` does. Stream to speakers, save to files, swap voices, choose models — one binary, terminal-first."
+description: "sag is a Go CLI that turns text into macOS `say`-style speech with ElevenLabs or 60db. Stream to speakers, save to files, swap voices, choose models — one binary, terminal-first."
 ---
 
 ## Try it
 
-After [installing](install.md) and exporting `ELEVENLABS_API_KEY`, every TTS call is a one-liner.
+After [installing](install.md) and exporting exactly one provider key, every TTS call is a one-liner.
 
 ```bash
 # Speak through the speakers, macOS-say style.
@@ -31,8 +31,9 @@ sag voices --search english --limit 5 --try
 ## What sag does
 
 - **Drop-in `say` replacement.** Same flag shapes (`-v`, `-r`, `-f`, `-o`), same default of streaming to the speakers. Compatibility no-ops (`--progress`, `--audio-device`, `--quality`, …) keep existing scripts working.
-- **Stream-while-you-generate.** Audio plays as bytes arrive over `/v1/text-to-speech/{voice}/stream`. Latency tiers let you trade quality for first-byte time.
+- **Stream-while-you-generate.** Audio plays as bytes arrive over ElevenLabs `/v1/text-to-speech/{voice}/stream` or 60db `/tts-stream`, with automatic fallback to full synthesis when the 60db route cannot represent the requested file format.
 - **Voice discovery.** Server-side name search, semantic `--query` over name/description/labels, repeatable `--label key=value` filters, plus `--try` to play preview clips for the matches.
+- **Optional 60db backend.** `sag` merges 60db `/default-voices` and `/myvoices`, validates JSON success envelopes even on HTTP 200, and decodes the documented base64/NDJSON audio responses internally.
 - **Every ElevenLabs model.** Defaults to `eleven_v3` for expressive output; switch to `eleven_multilingual_v2`, `eleven_flash_v2_5`, or `eleven_turbo_v2_5` with `--model-id`. Stability, similarity, style, speaker-boost, seed, normalization, and language are all flag-controlled.
 - **Format inference.** `.mp3` → `mp3_44100_128`, `.wav` → `pcm_44100`, `.ogg`/`.opus` → `opus_48000_64`. Override with `--format` when you need something else.
 - **Cross-platform playback.** macOS uses `afplay` for AirPlay-friendly routing; Linux and Windows fall back to a `go-mp3` + `oto` decoder. Pick explicitly with `--player auto|afplay|oto`.
@@ -49,4 +50,4 @@ sag voices --search english --limit 5 --try
 
 ## Project
 
-`sag` is MIT-licensed and not affiliated with ElevenLabs or Apple. The [changelog](https://github.com/steipete/sag/blob/main/CHANGELOG.md) tracks releases; the [spec](spec.md) records goals and non-goals. Source: <https://github.com/steipete/sag>.
+`sag` is MIT-licensed and not affiliated with ElevenLabs, 60db, or Apple. The [changelog](https://github.com/steipete/sag/blob/main/CHANGELOG.md) tracks releases; the [spec](spec.md) records goals and non-goals. Source: <https://github.com/steipete/sag>.
