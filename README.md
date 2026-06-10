@@ -1,4 +1,4 @@
-# sag 🗣️ — “Mac-style speech with ElevenLabs”
+# sag 🗣️ — “Mac-style speech with ElevenLabs or 60db”
 
 One-liner TTS that works like `say`: stream to speakers by default, list voices, or save audio files.
 
@@ -24,9 +24,28 @@ sudo apt install build-essential pkg-config libasound2-dev
 ```
 
 ## Configuration
-- `ELEVENLABS_API_KEY` (required)
-- `--api-key-file` or `ELEVENLABS_API_KEY_FILE`/`SAG_API_KEY_FILE` to load the key from a file
-- Optional defaults: `ELEVENLABS_VOICE_ID` or `SAG_VOICE_ID`
+
+`sag` supports two TTS providers and auto-selects one from your configured credentials:
+
+- **ElevenLabs** — `ELEVENLABS_API_KEY` (or `--api-key`, or `--api-key-file` / `ELEVENLABS_API_KEY_FILE` / `SAG_API_KEY_FILE`)
+- **60db** (`api.60db.ai`) — `SIXTYDB_API_KEY` (or `SIXTYDB_API_KEY_FILE`)
+
+Selection rules:
+- Only one key set → that provider is used.
+- Both keys set → error; unset one provider key and retry.
+- Neither set → error.
+
+Optional ElevenLabs defaults: `ELEVENLABS_VOICE_ID` or `SAG_VOICE_ID`. Override the active provider host with `--base-url`.
+
+60db support is intentionally narrow and follows the documented HTTP API:
+- voice discovery merges `GET /default-voices` and `GET /myvoices`
+- default MP3 streaming uses `POST /tts-stream`
+- explicit file formats and full downloads use `POST /tts-synthesize`
+- the `success` envelope is validated even on HTTP 200 responses
+
+Shared speak flags that work on both providers include `--voice`, `--speed` / `--rate`, `--stability`, `--similarity`, `--format`, `--stream`, `--play`, `--output`, `--timeout`, and `--metrics`.
+
+ElevenLabs-only speak flags fail fast on 60db: `--model-id`, `--style`, `--speaker-boost` / `--no-speaker-boost`, `--seed`, `--normalize`, `--lang`, and `--latency-tier`. `--stability` / `--similarity` still use the CLI's `0..1` range and are scaled to 60db's documented `0..100` API values. See [docs/providers.md](docs/providers.md) for provider-specific details.
 
 ## Usage
 
@@ -61,6 +80,7 @@ sag speak -v Roger --stream --latency-tier 3 "Faster start"
 sag speak -v Roger --speed 1.2 "Talk a bit faster"
 sag speak -v Roger --model-id eleven_multilingual_v2 "Use stable v2 baseline"
 sag speak -v Roger --output out.wav --format pcm_44100 "Wave output"
+SIXTYDB_API_KEY=... sag speak -v Aria --output out.wav --no-play "60db WAV output"
 ```
 
 Key flags (subset):
@@ -149,6 +169,6 @@ ffprobe -v quiet -show_entries format=duration -of csv=p=0 long.mp3
   - Build: `go build ./cmd/sag`
 
 ## Limitations
-- ElevenLabs account and API key required.
+- One provider API key is required.
 - Voice defaults to first available if not provided.
 - Non-mac platforms: playback still works via `go-mp3` + `oto`, but device selection flags are no-ops.

@@ -1,24 +1,28 @@
 ---
 title: Configuration
-description: "API keys, default voices, timeouts, base URL, and player selection — everything sag reads from the environment."
+description: "Provider keys, default voices, timeouts, base URL, and player selection — everything sag reads from flags or the environment."
 ---
 
 # Configuration
 
 `sag` reads configuration from CLI flags first, then environment variables. There is no config file: the binary stays single-purpose and friendly to ephemeral CI runners.
 
-## API key
+## Provider key
 
 Required for any TTS or voice call. `sag --help`, `sag prompting`, and `sag --version` work without one.
 
-| Flag / variable | Notes |
+| Provider | Flag / variable | Notes |
 | --- | --- |
-| `--api-key` | Inline override. Avoid in shell history; prefer env or `--api-key-file`. |
-| `ELEVENLABS_API_KEY` | Primary env var. |
-| `SAG_API_KEY` | Accepted alias. |
-| `--api-key-file <path>` | Read the key from a file. |
-| `ELEVENLABS_API_KEY_FILE` | Same as `--api-key-file`. |
-| `SAG_API_KEY_FILE` | Alias. |
+| ElevenLabs | `--api-key` | Inline override. Avoid in shell history; prefer env or `--api-key-file`. |
+| ElevenLabs | `ELEVENLABS_API_KEY` | Primary env var. |
+| ElevenLabs | `SAG_API_KEY` | Accepted alias. |
+| ElevenLabs | `--api-key-file <path>` | Read the key from a file. |
+| ElevenLabs | `ELEVENLABS_API_KEY_FILE` | Same as `--api-key-file`. |
+| ElevenLabs | `SAG_API_KEY_FILE` | Alias. |
+| 60db | `SIXTYDB_API_KEY` | Primary env var. |
+| 60db | `SIXTYDB_API_KEY_FILE` | Read the key from a file. |
+
+Configure exactly one provider at a time. If both ElevenLabs and 60db credentials are present, `sag` errors instead of guessing.
 
 The file form is handy for agents and containers:
 
@@ -34,7 +38,9 @@ When `--voice` / `--voice-id` is omitted, `sag` resolves in this order:
 
 1. `ELEVENLABS_VOICE_ID`
 2. `SAG_VOICE_ID`
-3. The first voice returned by `/v1/voices` (logged on stderr so you notice).
+3. The first voice returned by the active provider's voice listing (logged on stderr so you notice).
+
+The env defaults apply only to ElevenLabs. With 60db, `sag` falls back to the first merged result from `/default-voices` and `/myvoices`.
 
 ```bash
 export SAG_VOICE_ID=21m00Tcm4TlvDq8ikWAM
@@ -77,18 +83,18 @@ Pick a backend explicitly via `--player oto` or `SAG_PLAYER=oto`. See [Streaming
 
 ## API base URL
 
-Override the ElevenLabs endpoint when you’re routing through a proxy or talking to a regional/staging deployment:
+Override the active provider endpoint when you’re routing through a proxy or talking to a regional/staging deployment:
 
 ```bash
 sag --base-url https://api.elevenlabs.io "Default."
 sag --base-url https://your-proxy.internal "Routed."
 ```
 
-The default is `https://api.elevenlabs.io`. There is no env var for this; it’s deliberate so the API target is always visible in the command line.
+The default is `https://api.elevenlabs.io` for ElevenLabs and `https://api.60db.ai` for 60db. There is no env var for this; it’s deliberate so the API target is always visible in the command line.
 
 ## Voice metadata cache
 
-`sag voices --query` and `--label` need full voice descriptors. Metadata is cached in your platform-default config directory (`$XDG_CONFIG_HOME/sag/voices.json` on Linux, `~/Library/Application Support/sag/voices.json` on macOS) for 24 hours. Delete the file or pass `--limit 0` after a voice update to force a refresh.
+`sag voices --query` and `--label` need full voice descriptors. Metadata is cached in your platform-default cache directory for 24 hours. Delete the file if you need an immediate refresh.
 
 ## Compatibility flags (no-ops)
 

@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"path"
 	"strings"
+
+	"github.com/steipete/sag/internal/tts"
 )
 
 // Client talks to the ElevenLabs HTTP API.
@@ -31,15 +33,12 @@ func NewClient(apiKey, baseURL string) *Client {
 	}
 }
 
-// Voice represents a voice entry returned by ElevenLabs.
-type Voice struct {
-	VoiceID     string            `json:"voice_id"`
-	Name        string            `json:"name"`
-	Category    string            `json:"category"`
-	Description string            `json:"description"`
-	Labels      map[string]string `json:"labels,omitempty"`
-	PreviewURL  string            `json:"preview_url"`
-}
+// Voice is re-exported from the shared voice-catalog package so existing
+// callers can keep using elevenlabs.Voice while query/filter code stays shared.
+type (
+	// Voice represents a voice entry returned by ElevenLabs.
+	Voice = tts.Voice
+)
 
 type listVoicesResponse struct {
 	Voices []Voice `json:"voices"`

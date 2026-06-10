@@ -1,11 +1,11 @@
 # sag specification
 
-CLI that mirrors macOS `say` but uses ElevenLabs for synthesis. Defaults to streaming directly to speakers and can also write audio files.
+CLI that mirrors macOS `say` but uses ElevenLabs or 60db for synthesis. Defaults to streaming directly to speakers and can also write audio files.
 
 ## Runtime & deps
 - Go 1.24+
 - Playback uses built-in Go audio (go-mp3 + oto) and should work on macOS/Linux/Windows with a default output device.
-- Auth via `ELEVENLABS_API_KEY` (or `--api-key` flag).
+- Auth via exactly one configured provider: ElevenLabs (`ELEVENLABS_API_KEY`, `SAG_API_KEY`, `--api-key`) or 60db (`SIXTYDB_API_KEY`).
 
 ## Commands
 
@@ -16,7 +16,7 @@ CLI that mirrors macOS `say` but uses ElevenLabs for synthesis. Defaults to stre
   - `-r/--rate` words-per-minute (default 175) maps to ElevenLabs speed.
   - `-o/--output` same meaning; format inferred by extension when possible.
   - Accepts but ignores `--progress`, `--audio-device`, `--network-send`, `--interactive`, `--file-format`, `--data-format`, `--channels`, `--bit-rate`, `--quality`.
-- Required: voice (via `-v/--voice` or `ELEVENLABS_VOICE_ID`/`SAG_VOICE_ID`).
+- Required: voice (via `-v/--voice` or the active provider default resolution).
 - Flags:
   - `--model-id` (default `eleven_v3`; common: `eleven_multilingual_v2`, `eleven_flash_v2_5`, `eleven_turbo_v2_5`)
   - `--format` (default `mp3_44100_128`; `.wav` infers `pcm_44100`)
@@ -34,8 +34,10 @@ CLI that mirrors macOS `say` but uses ElevenLabs for synthesis. Defaults to stre
   - `--metrics` print basic stats to stderr
   - `--output <path>` save audio while optionally playing
 - Behavior:
-  - Streaming path calls `POST /v1/text-to-speech/{voice_id}/stream` with JSON body.
-  - Non-streaming path calls `POST /v1/text-to-speech/{voice_id}` and then plays/saves.
+  - ElevenLabs streaming path calls `POST /v1/text-to-speech/{voice_id}/stream` with JSON body.
+  - 60db streaming path calls `POST /tts-stream` and decodes the documented NDJSON chunk stream.
+  - ElevenLabs non-streaming path calls `POST /v1/text-to-speech/{voice_id}` and then plays/saves.
+  - 60db non-streaming path calls `POST /tts-synthesize` and decodes `audio_base64`.
   - Errors if neither playback nor output is selected.
 
 Usage examples:
@@ -49,7 +51,7 @@ sag speak -v "Roger" -r 200 "mac say style flags"
 ```
 
 ### `sag voices`
-- Lists voices via `GET /v1/voices` (server-side search when supported).
+- Lists voices via the active provider. ElevenLabs uses `GET /v1/voices`; 60db merges `GET /default-voices` and `GET /myvoices`.
 - Flags:
   - `--search <query>`: search by name (server-side when available)
   - `--query <text>`: semantic query across name/description/labels (client-side)
@@ -67,9 +69,11 @@ sag voices --search "english"
 - Does not require an API key.
 
 ## Config sources
-- `ELEVENLABS_API_KEY` for auth (required).
-- Default voice env: `ELEVENLABS_VOICE_ID` or `SAG_VOICE_ID`.
-- `--base-url` flag for alternate API host (defaults to `https://api.elevenlabs.io`).
+- Exactly one provider key is required.
+- ElevenLabs auth: `ELEVENLABS_API_KEY`, `SAG_API_KEY`, `--api-key`, `--api-key-file`.
+- 60db auth: `SIXTYDB_API_KEY`, `SIXTYDB_API_KEY_FILE`.
+- ElevenLabs default voice env: `ELEVENLABS_VOICE_ID` or `SAG_VOICE_ID`.
+- `--base-url` flag for an alternate provider API host.
 
 ## Notes & future polish
 - Add cross-platform playback backends.

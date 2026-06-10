@@ -13,6 +13,8 @@ import (
 
 	"github.com/steipete/sag/internal/audio"
 	"github.com/steipete/sag/internal/elevenlabs"
+	"github.com/steipete/sag/internal/sixtydb"
+	"github.com/steipete/sag/internal/tts"
 
 	"github.com/spf13/cobra"
 )
@@ -61,7 +63,7 @@ func init() {
 		Long:  "If no text argument is provided, the command reads from stdin.\n\nTip: run `sag prompting` for model-specific prompting tips and recommended flag combinations.",
 		Args:  cobra.ArbitraryArgs,
 		PreRunE: func(_ *cobra.Command, _ []string) error {
-			return ensureAPIKey()
+			return ensureProviderConfigured()
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := applyRateAndSpeed(&opts); err != nil {
@@ -74,9 +76,14 @@ func init() {
 				return err
 			}
 
+			provider, err := selectProvider()
+			if err != nil {
+				return err
+			}
+
 			forceVoiceID := cmd.Flags().Changed("voice-id")
 			voiceInput := opts.voiceID
-			if voiceInput == "" {
+			if provider.name == providerElevenLabs && voiceInput == "" {
 				if env := os.Getenv("ELEVENLABS_VOICE_ID"); env != "" {
 					voiceInput = env
 					forceVoiceID = true
@@ -85,9 +92,8 @@ func init() {
 					forceVoiceID = true
 				}
 			}
-			client := elevenlabs.NewClient(cfg.APIKey, cfg.BaseURL)
 
-			voiceID, err := resolveVoice(cmd.Context(), client, voiceInput, forceVoiceID)
+			voiceID, err := resolveVoice(cmd.Context(), provider.voices, voiceInput, forceVoiceID)
 			if err != nil {
 				return err
 			}
@@ -113,35 +119,72 @@ func init() {
 				}
 			}
 
+			if provider.name == providerSixtyDB {
+				if err := prepareSixtyDBOptions(cmd, &opts); err != nil {
+					return err
+				}
+			}
+
 			ctx, cancel, err := ttsContext(cmd.Context(), opts.timeout)
 			if err != nil {
 				return err
 			}
 			defer cancel()
 
-			payload, err := buildTTSRequest(cmd, opts, text)
-			if err != nil {
-				return err
+			var (
+				streamFunc  func(context.Context) (io.ReadCloser, error)
+				convertFunc func(context.Context) ([]byte, error)
+			)
+			switch provider.name {
+			case providerElevenLabs:
+				payload, err := buildElevenLabsTTSRequest(cmd, opts, text)
+				if err != nil {
+					return err
+				}
+				streamFunc = func(ctx context.Context) (io.ReadCloser, error) {
+					return provider.elevenlabs.StreamTTS(ctx, opts.voiceID, payload, opts.latencyTier)
+				}
+				convertFunc = func(ctx context.Context) ([]byte, error) {
+					return provider.elevenlabs.ConvertTTS(ctx, opts.voiceID, payload)
+				}
+			case providerSixtyDB:
+				payload, err := buildSixtyDBTTSRequest(cmd, opts, text)
+				if err != nil {
+					return err
+				}
+				streamFunc = func(ctx context.Context) (io.ReadCloser, error) {
+					return provider.sixtydb.StreamTTS(ctx, payload)
+				}
+				convertFunc = func(ctx context.Context) ([]byte, error) {
+					return provider.sixtydb.ConvertTTS(ctx, payload)
+				}
+			default:
+				return fmt.Errorf("unsupported provider %q", provider.name)
 			}
 
 			start := time.Now()
 			var bytes int64
 			if opts.stream {
-				n, err := streamAndPlay(ctx, client, opts, payload)
+				n, err := streamAndPlay(ctx, opts, streamFunc)
 				bytes = n
 				if err != nil {
 					return err
 				}
 			} else {
-				n, err := convertAndPlay(ctx, client, opts, payload)
+				n, err := convertAndPlay(ctx, opts, convertFunc)
 				bytes = n
 				if err != nil {
 					return err
 				}
 			}
 			if opts.metrics {
-				fmt.Fprintf(os.Stderr, "metrics: chars=%d bytes=%d model=%s voice=%s stream=%t latencyTier=%d dur=%s\n",
-					len([]rune(text)), bytes, opts.modelID, opts.voiceID, opts.stream, opts.latencyTier, time.Since(start).Truncate(time.Millisecond))
+				if provider.name == providerElevenLabs {
+					fmt.Fprintf(os.Stderr, "metrics: chars=%d bytes=%d provider=%s model=%s voice=%s stream=%t latencyTier=%d dur=%s\n",
+						len([]rune(text)), bytes, provider.name, opts.modelID, opts.voiceID, opts.stream, opts.latencyTier, time.Since(start).Truncate(time.Millisecond))
+				} else {
+					fmt.Fprintf(os.Stderr, "metrics: chars=%d bytes=%d provider=%s voice=%s stream=%t dur=%s\n",
+						len([]rune(text)), bytes, provider.name, opts.voiceID, opts.stream, time.Since(start).Truncate(time.Millisecond))
+				}
 			}
 			return nil
 		},
@@ -272,7 +315,7 @@ func applyRateAndSpeed(opts *speakOptions) error {
 	return nil
 }
 
-func buildTTSRequest(cmd *cobra.Command, opts speakOptions, text string) (elevenlabs.TTSRequest, error) {
+func buildElevenLabsTTSRequest(cmd *cobra.Command, opts speakOptions, text string) (elevenlabs.TTSRequest, error) {
 	flags := cmd.Flags()
 
 	var stabilityPtr *float64
@@ -280,10 +323,9 @@ func buildTTSRequest(cmd *cobra.Command, opts speakOptions, text string) (eleven
 		if opts.stability < 0 || opts.stability > 1 {
 			return elevenlabs.TTSRequest{}, errors.New("stability must be between 0 and 1")
 		}
-		if opts.modelID == "eleven_v3" {
-			if !floatEqualsOneOf(opts.stability, []float64{0, 0.5, 1}) {
-				return elevenlabs.TTSRequest{}, errors.New("for eleven_v3, stability must be one of 0.0, 0.5, 1.0 (Creative/Natural/Robust)")
-			}
+		// The discrete 0/0.5/1 constraint is specific to ElevenLabs eleven_v3.
+		if opts.modelID == "eleven_v3" && !floatEqualsOneOf(opts.stability, []float64{0, 0.5, 1}) {
+			return elevenlabs.TTSRequest{}, errors.New("for eleven_v3, stability must be one of 0.0, 0.5, 1.0 (Creative/Natural/Robust)")
 		}
 		stabilityPtr = &opts.stability
 	}
@@ -368,6 +410,63 @@ func buildTTSRequest(cmd *cobra.Command, opts speakOptions, text string) (eleven
 	}, nil
 }
 
+func prepareSixtyDBOptions(cmd *cobra.Command, opts *speakOptions) error {
+	unsupported := changedSixtyDBUnsupportedFlags(cmd.Flags().Changed)
+	if len(unsupported) > 0 {
+		return fmt.Errorf("60db does not support %s", strings.Join(unsupported, ", "))
+	}
+
+	if !cmd.Flags().Changed("format") && strings.EqualFold(filepath.Ext(opts.outputPath), ".flac") {
+		opts.outputFmt = "flac"
+	}
+
+	format := sixtydb.CanonicalOutputFormat(opts.outputFmt)
+	if format != "" {
+		opts.outputFmt = format
+	}
+
+	if opts.play && format != "" && format != "mp3" {
+		return fmt.Errorf("60db speaker playback requires mp3 audio; use --no-play to save %s output", format)
+	}
+
+	if opts.stream && format != "" && format != "mp3" {
+		if cmd.Flags().Changed("stream") {
+			return fmt.Errorf("60db streaming does not support %s output; use --no-stream", format)
+		}
+		opts.stream = false
+	}
+	return nil
+}
+
+func buildSixtyDBTTSRequest(cmd *cobra.Command, opts speakOptions, text string) (sixtydb.TTSRequest, error) {
+	flags := cmd.Flags()
+	speed := opts.speed
+	req := sixtydb.TTSRequest{
+		Text:    text,
+		VoiceID: opts.voiceID,
+		Speed:   &speed,
+	}
+
+	if flags.Changed("stability") {
+		if opts.stability < 0 || opts.stability > 1 {
+			return sixtydb.TTSRequest{}, errors.New("stability must be between 0 and 1")
+		}
+		stability := opts.stability * 100
+		req.Stability = &stability
+	}
+	if flags.Changed("similarity") || flags.Changed("similarity-boost") {
+		if opts.similarity < 0 || opts.similarity > 1 {
+			return sixtydb.TTSRequest{}, errors.New("similarity must be between 0 and 1")
+		}
+		similarity := opts.similarity * 100
+		req.Similarity = &similarity
+	}
+	if !opts.stream {
+		req.OutputFormat = opts.outputFmt
+	}
+	return req, nil
+}
+
 func floatEqualsOneOf(v float64, allowed []float64) bool {
 	const eps = 1e-9
 	for _, a := range allowed {
@@ -427,8 +526,12 @@ func isStdinTTY() bool {
 	return (stat.Mode() & os.ModeCharDevice) != 0
 }
 
-func streamAndPlay(ctx context.Context, client *elevenlabs.Client, opts speakOptions, payload elevenlabs.TTSRequest) (int64, error) {
-	resp, err := client.StreamTTS(ctx, opts.voiceID, payload, opts.latencyTier)
+func streamAndPlay(ctx context.Context, opts speakOptions, stream func(context.Context) (io.ReadCloser, error)) (int64, error) {
+	if !opts.play && opts.outputPath == "" {
+		return 0, errors.New("nothing to do: enable --play or provide --output")
+	}
+
+	resp, err := stream(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -479,17 +582,17 @@ func streamAndPlay(ctx context.Context, client *elevenlabs.Client, opts speakOpt
 		return copyNVal, playErr
 	}
 
-	if len(writers) == 0 {
-		return 0, errors.New("nothing to do: enable --play or provide --output")
-	}
-
 	mw := io.MultiWriter(writers...)
 	n, err := io.Copy(mw, resp)
 	return n, err
 }
 
-func convertAndPlay(ctx context.Context, client *elevenlabs.Client, opts speakOptions, payload elevenlabs.TTSRequest) (int64, error) {
-	data, err := client.ConvertTTS(ctx, opts.voiceID, payload)
+func convertAndPlay(ctx context.Context, opts speakOptions, convert func(context.Context) ([]byte, error)) (int64, error) {
+	if !opts.play && opts.outputPath == "" {
+		return 0, errors.New("nothing to do: enable --play or provide --output")
+	}
+
+	data, err := convert(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -516,13 +619,10 @@ func convertAndPlay(ctx context.Context, client *elevenlabs.Client, opts speakOp
 		}()
 		return n, player(ctx, pr)
 	}
-	if opts.outputPath == "" {
-		return n, errors.New("nothing to do: enable --play or provide --output")
-	}
 	return n, nil
 }
 
-func resolveVoice(ctx context.Context, client *elevenlabs.Client, voiceInput string, forceID bool) (string, error) {
+func resolveVoice(ctx context.Context, client tts.VoiceCatalog, voiceInput string, forceID bool) (string, error) {
 	voiceInput = strings.TrimSpace(voiceInput)
 	if voiceInput == "" {
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -532,7 +632,7 @@ func resolveVoice(ctx context.Context, client *elevenlabs.Client, voiceInput str
 			return "", fmt.Errorf("voice not specified and failed to fetch voices: %w", err)
 		}
 		if len(voices) == 0 {
-			return "", errors.New("no voices available; specify --voice or set ELEVENLABS_VOICE_ID")
+			return "", errors.New("no voices available; specify --voice")
 		}
 		fmt.Fprintf(os.Stderr, "defaulting to voice %s (%s)\n", voices[0].Name, voices[0].VoiceID)
 		return voices[0].VoiceID, nil

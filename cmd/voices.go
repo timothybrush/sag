@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/steipete/sag/internal/audio"
-	"github.com/steipete/sag/internal/elevenlabs"
+	"github.com/steipete/sag/internal/tts"
 
 	"github.com/spf13/cobra"
 )
@@ -39,7 +39,7 @@ func init() {
 		Use:   "voices",
 		Short: "List available ElevenLabs voices",
 		PreRunE: func(_ *cobra.Command, _ []string) error {
-			return ensureAPIKey()
+			return ensureProviderConfigured()
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			hasLabelFilters := false
@@ -53,12 +53,15 @@ func init() {
 				return errors.New("--try requires --search, --query, --label, or --limit to avoid playing all voices")
 			}
 
-			client := elevenlabs.NewClient(cfg.APIKey, cfg.BaseURL)
+			provider, err := selectProvider()
+			if err != nil {
+				return err
+			}
+			client := provider.voices
 			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 			defer cancel()
 
-			var voices []elevenlabs.Voice
-			var err error
+			var voices []tts.Voice
 			if opts.search != "" {
 				voices, err = client.SearchVoices(ctx, opts.search, opts.limit)
 				if err != nil {
@@ -169,9 +172,9 @@ func init() {
 	rootCmd.AddCommand(cmd)
 }
 
-func filterVoicesByName(voices []elevenlabs.Voice, search string) []elevenlabs.Voice {
+func filterVoicesByName(voices []tts.Voice, search string) []tts.Voice {
 	searchLower := strings.ToLower(search)
-	filtered := make([]elevenlabs.Voice, 0, len(voices))
+	filtered := make([]tts.Voice, 0, len(voices))
 	for _, v := range voices {
 		if strings.Contains(strings.ToLower(v.Name), searchLower) {
 			filtered = append(filtered, v)
@@ -180,7 +183,7 @@ func filterVoicesByName(voices []elevenlabs.Voice, search string) []elevenlabs.V
 	return filtered
 }
 
-func playVoicePreviewImpl(ctx context.Context, client *elevenlabs.Client, voice elevenlabs.Voice) error {
+func playVoicePreviewImpl(ctx context.Context, client tts.VoiceCatalog, voice tts.Voice) error {
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 

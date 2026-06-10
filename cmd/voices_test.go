@@ -13,6 +13,8 @@ import (
 )
 
 func TestVoicesCommand(t *testing.T) {
+	resetRootCommandState()
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/voices" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
@@ -63,6 +65,8 @@ func TestFilterVoicesByName(t *testing.T) {
 }
 
 func TestVoicesCommandTryRequiresFilter(t *testing.T) {
+	resetRootCommandState()
+
 	cfg.APIKey = "key"
 	cfg.BaseURL = "http://example.invalid"
 	t.Cleanup(func() {
