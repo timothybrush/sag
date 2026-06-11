@@ -64,7 +64,15 @@ jobs:
             dist/out/*.sha256
 
   build-linux:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            goarch: amd64
+          - runner: ubuntu-24.04-arm
+            goarch: arm64
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -78,36 +86,27 @@ jobs:
           check-latest: true
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
-      - name: Build Linux binaries
+      - name: Build Linux binary
         shell: bash
         run: |
           set -euo pipefail
           ref="${{ inputs.tag }}"
           if [ -z "$ref" ]; then ref="${GITHUB_REF_NAME}"; fi
           version="${ref#v}"
-          mkdir -p dist/build dist/out
+          target="linux_${{ matrix.goarch }}"
+          mkdir -p dist/pkg dist/out
 
-          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -o dist/build/sag ./cmd/sag
-          CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -o dist/build/sag-linux-arm64 ./cmd/sag
-
-          for target in linux_amd64 linux_arm64; do
-            rm -rf dist/pkg
-            mkdir -p dist/pkg
-            cp README.md LICENSE dist/pkg/
-            case "$target" in
-              linux_amd64) cp dist/build/sag dist/pkg/sag ;;
-              linux_arm64) cp dist/build/sag-linux-arm64 dist/pkg/sag ;;
-            esac
-            tar -C dist/pkg -czf "dist/out/sag_${version}_${target}.tar.gz" sag README.md LICENSE
-            sha256sum "dist/out/sag_${version}_${target}.tar.gz" > "dist/out/sag_${version}_${target}.tar.gz.sha256"
-          done
+          CGO_ENABLED=1 GOOS=linux GOARCH="${{ matrix.goarch }}" go build -o dist/pkg/sag ./cmd/sag
+          cp README.md LICENSE dist/pkg/
+          tar -C dist/pkg -czf "dist/out/sag_${version}_${target}.tar.gz" sag README.md LICENSE
+          sha256sum "dist/out/sag_${version}_${target}.tar.gz" > "dist/out/sag_${version}_${target}.tar.gz.sha256"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist-linux
+          name: dist-linux-${{ matrix.goarch }}
           path: |
             dist/out/*.tar.gz
             dist/out/*.sha256
