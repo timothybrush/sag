@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.4.0 - 2026-06-11
 ### Added
 - Added live-tested 60db provider support via `/default-voices`, `/myvoices`, and `/tts-synthesize`, including bounded NDJSON decoding, incomplete-response rejection, and PCM-to-WAV playback. (#20, thanks @manishEMS47)
