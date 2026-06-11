@@ -51,8 +51,9 @@ jobs:
               darwin_amd64) cp dist/build/sag-darwin-amd64 dist/pkg/sag ;;
               darwin_universal) cp dist/build/sag dist/pkg/sag ;;
             esac
-            tar -C dist/pkg -czf "dist/out/sag_${version}_${target}.tar.gz" sag README.md LICENSE
-            shasum -a 256 "dist/out/sag_${version}_${target}.tar.gz" > "dist/out/sag_${version}_${target}.tar.gz.sha256"
+            archive="sag_${version}_${target}.tar.gz"
+            tar -C dist/pkg -czf "dist/out/$archive" sag README.md LICENSE
+            (cd dist/out && shasum -a 256 "$archive" > "$archive.sha256")
           done
 
       - name: Upload artifacts
@@ -100,8 +101,9 @@ jobs:
 
           CGO_ENABLED=1 GOOS=linux GOARCH="${{ matrix.goarch }}" go build -o dist/pkg/sag ./cmd/sag
           cp README.md LICENSE dist/pkg/
-          tar -C dist/pkg -czf "dist/out/sag_${version}_${target}.tar.gz" sag README.md LICENSE
-          sha256sum "dist/out/sag_${version}_${target}.tar.gz" > "dist/out/sag_${version}_${target}.tar.gz.sha256"
+          archive="sag_${version}_${target}.tar.gz"
+          tar -C dist/pkg -czf "dist/out/$archive" sag README.md LICENSE
+          (cd dist/out && sha256sum "$archive" > "$archive.sha256")
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -145,7 +147,8 @@ jobs:
           if (Test-Path $zip) { Remove-Item $zip -Force }
           Compress-Archive -Path dist\out\pkg\sag.exe,dist\out\pkg\README.md,dist\out\pkg\LICENSE -DestinationPath $zip
 
-          (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() + "  " + (Split-Path $zip -Leaf) | Out-File -Encoding ascii "$zip.sha256"
+          $checksum = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() + "  " + (Split-Path $zip -Leaf) + "`n"
+          [IO.File]::WriteAllText("$zip.sha256", $checksum, [Text.Encoding]::ASCII)
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -175,6 +178,7 @@ jobs:
           if [ -z "$ref" ]; then ref="${GITHUB_REF_NAME}"; fi
           version="${ref#v}"
           cat out/*.sha256 > "out/sag_${version}_checksums.txt"
+          (cd out && sha256sum --check "sag_${version}_checksums.txt")
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
