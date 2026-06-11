@@ -121,7 +121,7 @@ func TestSpeakCommand_SixtyDBMetricsOmitElevenLabsModel(t *testing.T) {
 	t.Setenv("SIXTYDB_API_KEY", "sd-key")
 
 	const voiceID = "voice-001"
-	audio := base64.StdEncoding.EncodeToString([]byte("ID3audio-bytes"))
+	audio := base64.StdEncoding.EncodeToString([]byte{0, 0, 1, 0})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/tts-synthesize" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
@@ -130,20 +130,16 @@ func TestSpeakCommand_SixtyDBMetricsOmitElevenLabsModel(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
-		if got["voice_id"] != voiceID || got["output_format"] != "mp3" {
+		if got["voice_id"] != voiceID || got["output_format"] != "wav" || got["sample_rate"] != float64(48000) {
 			t.Fatalf("unexpected request body: %+v", got)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"success":       true,
-			"audio_base64":  audio,
-			"output_format": "mp3",
-			"encoding":      "mp3",
-		})
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = w.Write([]byte(`{"result":{"audioContent":"` + audio + `"}}`))
 	}))
 	defer srv.Close()
 
 	tmp := t.TempDir()
-	outPath := tmp + "/out.mp3"
+	outPath := tmp + "/out.wav"
 	restore, read := captureStderr(t)
 	defer restore()
 

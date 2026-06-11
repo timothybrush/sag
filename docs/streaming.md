@@ -5,7 +5,7 @@ description: "How sag streams audio while it generates, picks a player backend, 
 
 # Streaming & playback
 
-`sag` streams by default. Audio bytes flow from ElevenLabs straight to your speakers (and optionally to a file) without waiting for the full payload. This page documents the trade-offs and the knobs.
+`sag` streams ElevenLabs by default. Audio bytes flow straight to your speakers (and optionally to a file) without waiting for the full payload. 60db synthesis is buffered because its live response must be fully validated and wrapped as WAV before playback.
 
 ## Streaming pipeline
 
@@ -29,7 +29,7 @@ ElevenLabs /v1/text-to-speech/{voice}
           io.Pipe  ──→ player backend  (when --play)
 ```
 
-The streaming path uses a `io.MultiWriter` so writing to disk and playing in parallel is one allocation and one copy loop. The non-streaming path materializes the whole response, then plays it.
+The streaming path uses a `io.MultiWriter` so writing to disk and playing in parallel is one allocation and one copy loop. The non-streaming path materializes the whole response, then plays it. 60db always uses the latter path; explicit `--stream` is rejected.
 
 ## When to disable streaming
 
@@ -53,20 +53,20 @@ Tiers 3 and 4 are noticeable on long prompts; on short ones the win is mostly co
 
 ## Player backends
 
-`sag` uses `afplay` on macOS by default and falls back to a pure-Go decoder (`go-mp3` + `oto`) on Linux/Windows. Pick explicitly via `--player` or `SAG_PLAYER`.
+`sag` uses `afplay` on macOS by default and falls back to a pure-Go MP3/WAV decoder with `oto` on Linux/Windows. Pick explicitly via `--player` or `SAG_PLAYER`.
 
 | Backend | Platforms | Notes |
 | --- | --- | --- |
 | `auto` | all | macOS → `afplay`, others → `oto`. |
 | `afplay` | macOS | Routes through CoreAudio so AirPlay, Bluetooth zones, and the menubar volume all work as expected. |
-| `oto` | macOS, Linux, Windows | Pure-Go MP3 decode + cross-platform output. Good fallback on macOS when `afplay` misbehaves (rare). |
+| `oto` | macOS, Linux, Windows | Pure-Go MP3 and PCM16 WAV decode + cross-platform output. Good fallback on macOS when `afplay` misbehaves (rare). |
 
 ```bash
 sag --player oto "Run on Linux or force pure Go."
 SAG_PLAYER=afplay sag "Always afplay."
 ```
 
-`afplay` requires the audio to land as a complete temp file before playback starts; sag handles the buffering for you. `oto` decodes the stream chunk-by-chunk for true streaming playback.
+`afplay` requires the audio to land as a complete temp file before playback starts; sag handles the buffering for you. `oto` decodes MP3 chunk-by-chunk and plays validated PCM16 WAV files.
 
 ## File-only mode
 

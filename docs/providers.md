@@ -15,16 +15,15 @@ Use `--base-url` to override the active provider host.
 
 ## 60db routes sag uses
 
-The 60db integration is deliberately limited to the documented REST contract:
+The 60db integration is deliberately limited to routes verified against the live service:
 
 | Capability | Route | Notes |
 | --- | --- | --- |
 | Voice listing | `GET /default-voices` | Workspace-default voices; queried first. |
 | Voice listing | `GET /myvoices` | User-created voices; appended after defaults and deduped by `voice_id`. |
-| Streaming speak | `POST /tts-stream` | NDJSON stream of base64 chunks; no `output_format` field in the request. |
-| Full speak | `POST /tts-synthesize` | JSON envelope with `audio_base64`, `encoding`, and `output_format`. |
+| Speak | `POST /tts-synthesize` | Live response is NDJSON containing base64 PCM chunks; sag validates the complete response and wraps it as 48 kHz mono WAV. |
 
-For 60db, `sag` validates the JSON `success` envelope even on HTTP 200 responses, decodes base64/NDJSON audio internally, rejects malformed or empty audio, and enforces per-chunk, per-frame, and total-audio limits.
+For 60db, `sag` validates error and incomplete markers even on HTTP 200 responses, handles single- and double-encoded chunks used by the live service, rejects malformed or empty audio, and enforces per-chunk, per-frame, and total-audio limits. The adapter also retains support for the documented JSON envelope if the service returns it.
 
 ## Flag behavior
 
@@ -36,7 +35,6 @@ For 60db, `sag` validates the JSON `success` envelope even on HTTP 200 responses
 - `--stability`
 - `--similarity` / `--similarity-boost`
 - `--format`
-- `--stream` / `--no-stream`
 - `--play` / `--no-play`
 - `-o, --output`
 - `--timeout`
@@ -58,15 +56,14 @@ These flags are passed through to ElevenLabs and rejected on 60db:
 ### Parameter translation
 
 - `--stability` and `--similarity` stay in the CLI's `0..1` range and are scaled to 60db's documented `0..100` request values.
-- `--format` is canonicalized for 60db full synthesis: `mp3_*` → `mp3`, `pcm_*` / `wav` → `wav`, `opus_*` / `ogg` → `ogg`, `flac` → `flac`.
+- 60db sends 48 kHz mono PCM. Sag wraps it as WAV, so `--format wav` and `.wav` output are supported.
 
 ## Streaming, files, and playback
 
 - ElevenLabs can stream in the requested output format, so `--stream` and `--format` work together.
-- 60db streaming is used only for the default MP3 path because `/tts-stream` does not document `output_format`.
-- On 60db, if the effective output format is non-MP3 and streaming was only enabled by the default, `sag` automatically falls back to `POST /tts-synthesize`.
-- On 60db, `--stream` plus a non-MP3 format is an error when you explicitly force `--stream`.
-- On 60db, `--play` requires MP3 output. Use `--no-play -o out.wav` (or `ogg` / `flac`) for other formats.
+- 60db uses validated full-response synthesis because the live `/tts-stream` route does not provide a working compatible stream.
+- Sag disables its default streaming mode automatically for 60db. Explicit `--stream` is an error.
+- 60db output is WAV only. It works with file output and both `afplay` and `oto` playback.
 
 ## Voice metadata notes
 

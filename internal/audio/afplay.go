@@ -10,9 +10,9 @@ import (
 	"os/exec"
 )
 
-// StreamViaAfplay plays MP3 audio using macOS afplay.
+// StreamViaAfplay plays audio using macOS afplay.
 func StreamViaAfplay(ctx context.Context, r io.Reader) error {
-	tmp, err := os.CreateTemp("", "sag-*.mp3")
+	tmp, err := os.CreateTemp("", "sag-*.audio")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}

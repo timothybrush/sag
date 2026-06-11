@@ -181,10 +181,8 @@ func TestPrepareSixtyDBOptionsRejectsUnsupportedFlags(t *testing.T) {
 	}
 }
 
-func TestPrepareSixtyDBOptionsFallsBackToConvertForNonMP3(t *testing.T) {
+func TestPrepareSixtyDBOptionsDefaultsToWAVAndDisablesStreaming(t *testing.T) {
 	cmd, opts := newSpeakTestCommand(t)
-	opts.outputFmt = "wav"
-	opts.play = false
 
 	if err := prepareSixtyDBOptions(cmd, opts); err != nil {
 		t.Fatalf("prepareSixtyDBOptions error: %v", err)
@@ -197,42 +195,41 @@ func TestPrepareSixtyDBOptionsFallsBackToConvertForNonMP3(t *testing.T) {
 	}
 }
 
-func TestPrepareSixtyDBOptionsInfersFLACFromOutputPath(t *testing.T) {
+func TestPrepareSixtyDBOptionsAllowsWAVPlayback(t *testing.T) {
 	cmd, opts := newSpeakTestCommand(t)
-	opts.outputPath = "voice.FLAC"
-	opts.play = false
+	opts.outputFmt = "wav"
 
 	if err := prepareSixtyDBOptions(cmd, opts); err != nil {
 		t.Fatalf("prepareSixtyDBOptions error: %v", err)
 	}
-	if opts.outputFmt != "flac" {
-		t.Fatalf("expected flac output format, got %q", opts.outputFmt)
+	if !opts.play {
+		t.Fatal("expected WAV playback to remain enabled")
 	}
 	if opts.stream {
-		t.Fatalf("expected stream to be disabled for flac output")
+		t.Fatal("expected stream to be disabled")
 	}
 }
 
-func TestPrepareSixtyDBOptionsRejectsExplicitStreamForNonMP3(t *testing.T) {
+func TestPrepareSixtyDBOptionsRejectsNonWAVOutput(t *testing.T) {
+	cmd, opts := newSpeakTestCommand(t)
+	opts.outputPath = "voice.FLAC"
+	opts.play = false
+
+	err := prepareSixtyDBOptions(cmd, opts)
+	if err == nil || !strings.Contains(err.Error(), "supports wav output only") {
+		t.Fatalf("expected non-WAV rejection, got %v", err)
+	}
+}
+
+func TestPrepareSixtyDBOptionsRejectsExplicitStream(t *testing.T) {
 	cmd, opts := newSpeakTestCommand(t)
 	if err := cmd.Flags().Parse([]string{"--stream", "--format", "wav"}); err != nil {
 		t.Fatalf("parse flags: %v", err)
 	}
-	opts.play = false
 
 	err := prepareSixtyDBOptions(cmd, opts)
-	if err == nil || !strings.Contains(err.Error(), "use --no-stream") {
+	if err == nil || !strings.Contains(err.Error(), "does not support streaming") {
 		t.Fatalf("expected explicit stream rejection, got %v", err)
-	}
-}
-
-func TestPrepareSixtyDBOptionsRejectsPlaybackForNonMP3(t *testing.T) {
-	cmd, opts := newSpeakTestCommand(t)
-	opts.outputFmt = "flac"
-
-	err := prepareSixtyDBOptions(cmd, opts)
-	if err == nil || !strings.Contains(err.Error(), "requires mp3 audio") {
-		t.Fatalf("expected playback format error, got %v", err)
 	}
 }
 
@@ -240,6 +237,7 @@ func TestBuildSixtyDBTTSRequestScalesDocumentedFields(t *testing.T) {
 	cmd, opts := newSpeakTestCommand(t)
 	opts.voiceID = "voice_123"
 	opts.stream = false
+	opts.outputFmt = "wav"
 	if err := cmd.Flags().Parse([]string{"--stability", "0.5", "--similarity-boost", "0.8"}); err != nil {
 		t.Fatalf("parse flags: %v", err)
 	}
@@ -260,19 +258,23 @@ func TestBuildSixtyDBTTSRequestScalesDocumentedFields(t *testing.T) {
 	if req.Similarity == nil || *req.Similarity != 80 {
 		t.Fatalf("expected similarity 80, got %#v", req.Similarity)
 	}
-	if req.OutputFormat != "mp3_44100_128" {
-		t.Fatalf("expected raw output format to be passed to client canonicalizer, got %q", req.OutputFormat)
+	if req.OutputFormat != "wav" {
+		t.Fatalf("expected selected output format, got %q", req.OutputFormat)
+	}
+	if req.SampleRate != 48000 {
+		t.Fatalf("expected sample rate 48000, got %d", req.SampleRate)
 	}
 }
 
-func TestBuildSixtyDBTTSRequestOmitsOutputFormatWhenStreaming(t *testing.T) {
+func TestBuildSixtyDBTTSRequestAlwaysIncludesOutputFormat(t *testing.T) {
 	cmd, opts := newSpeakTestCommand(t)
+	opts.outputFmt = "wav"
 	req, err := buildSixtyDBTTSRequest(cmd, *opts, "hello")
 	if err != nil {
 		t.Fatalf("buildSixtyDBTTSRequest error: %v", err)
 	}
-	if req.OutputFormat != "" {
-		t.Fatalf("expected stream request to omit output format, got %q", req.OutputFormat)
+	if req.OutputFormat != "wav" {
+		t.Fatalf("expected output format, got %q", req.OutputFormat)
 	}
 }
 

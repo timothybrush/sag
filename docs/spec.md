@@ -1,10 +1,10 @@
 # sag specification
 
-CLI that mirrors macOS `say` but uses ElevenLabs or 60db for synthesis. Defaults to streaming directly to speakers and can also write audio files.
+CLI that mirrors macOS `say` but uses ElevenLabs or 60db for synthesis. ElevenLabs defaults to streaming directly to speakers; 60db buffers and validates WAV output before playback.
 
 ## Runtime & deps
 - Go 1.24+
-- Playback uses built-in Go audio (go-mp3 + oto) and should work on macOS/Linux/Windows with a default output device.
+- Playback uses built-in Go audio (MP3/WAV + oto) and should work on macOS/Linux/Windows with a default output device.
 - Auth via exactly one configured provider: ElevenLabs (`ELEVENLABS_API_KEY`, `SAG_API_KEY`, `--api-key`) or 60db (`SIXTYDB_API_KEY`).
 
 ## Commands
@@ -35,9 +35,9 @@ CLI that mirrors macOS `say` but uses ElevenLabs or 60db for synthesis. Defaults
   - `--output <path>` save audio while optionally playing
 - Behavior:
   - ElevenLabs streaming path calls `POST /v1/text-to-speech/{voice_id}/stream` with JSON body.
-  - 60db streaming path calls `POST /tts-stream` and decodes the documented NDJSON chunk stream.
   - ElevenLabs non-streaming path calls `POST /v1/text-to-speech/{voice_id}` and then plays/saves.
-  - 60db non-streaming path calls `POST /tts-synthesize` and decodes `audio_base64`.
+  - 60db calls `POST /tts-synthesize`, validates the live NDJSON response, rejects incomplete output, and wraps raw 48 kHz PCM as WAV.
+  - 60db disables the default stream mode; explicit `--stream` and non-WAV formats are errors.
   - Errors if neither playback nor output is selected.
 
 Usage examples:

@@ -416,22 +416,27 @@ func prepareSixtyDBOptions(cmd *cobra.Command, opts *speakOptions) error {
 		return fmt.Errorf("60db does not support %s", strings.Join(unsupported, ", "))
 	}
 
-	if !cmd.Flags().Changed("format") && strings.EqualFold(filepath.Ext(opts.outputPath), ".flac") {
-		opts.outputFmt = "flac"
+	if !cmd.Flags().Changed("format") {
+		switch {
+		case strings.EqualFold(filepath.Ext(opts.outputPath), ".flac"):
+			opts.outputFmt = "flac"
+		case opts.outputPath == "" || inferFormatFromExt(opts.outputPath) == "":
+			opts.outputFmt = "wav"
+		}
 	}
 
 	format := sixtydb.CanonicalOutputFormat(opts.outputFmt)
-	if format != "" {
-		opts.outputFmt = format
+	if format == "" {
+		format = "wav"
 	}
-
-	if opts.play && format != "" && format != "mp3" {
-		return fmt.Errorf("60db speaker playback requires mp3 audio; use --no-play to save %s output", format)
+	if format != "wav" {
+		return fmt.Errorf("60db currently returns raw PCM and supports wav output only; got %s", format)
 	}
+	opts.outputFmt = format
 
-	if opts.stream && format != "" && format != "mp3" {
+	if opts.stream {
 		if cmd.Flags().Changed("stream") {
-			return fmt.Errorf("60db streaming does not support %s output; use --no-stream", format)
+			return errors.New("60db live synthesis does not support streaming; omit --stream")
 		}
 		opts.stream = false
 	}
@@ -442,9 +447,11 @@ func buildSixtyDBTTSRequest(cmd *cobra.Command, opts speakOptions, text string) 
 	flags := cmd.Flags()
 	speed := opts.speed
 	req := sixtydb.TTSRequest{
-		Text:    text,
-		VoiceID: opts.voiceID,
-		Speed:   &speed,
+		Text:         text,
+		VoiceID:      opts.voiceID,
+		Speed:        &speed,
+		OutputFormat: opts.outputFmt,
+		SampleRate:   sixtydb.DefaultSampleRate,
 	}
 
 	if flags.Changed("stability") {
@@ -460,9 +467,6 @@ func buildSixtyDBTTSRequest(cmd *cobra.Command, opts speakOptions, text string) 
 		}
 		similarity := opts.similarity * 100
 		req.Similarity = &similarity
-	}
-	if !opts.stream {
-		req.OutputFormat = opts.outputFmt
 	}
 	return req, nil
 }

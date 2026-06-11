@@ -44,10 +44,12 @@ ElevenLabs publishes the canonical list at <https://elevenlabs.io/docs/api-refer
 
 Some formats require a paid plan; ElevenLabs returns `403` if your tier can’t request them. `sag` surfaces the API error verbatim.
 
+60db currently returns 48 kHz mono PCM regardless of its documented format field. Sag wraps that audio as WAV, so 60db accepts `.wav` / `--format wav` only.
+
 ## Streaming vs. format
 
 - **MP3** streams cleanly through both player backends and is the safest default.
-- **PCM/WAV** technically streams, but afplay needs the WAV header at the end of the file before it can play; for `--play` you usually want `--no-stream` + `-o file.wav` and listen via `afplay file.wav`.
+- **PCM/WAV** from ElevenLabs technically streams, but afplay needs the WAV header at the end of the file before it can play. 60db WAV is always buffered and validated before playback.
 - **Opus** streams over `afplay` on macOS. The pure-Go `oto` backend doesn’t decode Opus today, so on Linux save to disk and play it with `mpv`, `paplay`, or `vlc`.
 
 ## Inspecting what you saved

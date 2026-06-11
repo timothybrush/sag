@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 - 2026-06-11
 ### Added
-- Documented 60db provider support via `/default-voices`, `/myvoices`, `/tts-stream`, and `/tts-synthesize`, with strict provider selection and response validation. (#20, thanks @manishEMS47)
+- Added live-tested 60db provider support via `/default-voices`, `/myvoices`, and `/tts-synthesize`, including bounded NDJSON decoding, incomplete-response rejection, and PCM-to-WAV playback. (#20, thanks @manishEMS47)
 ### Changed
 - Release archives now include target-specific macOS and Linux assets for Homebrew and aqua installers.
 

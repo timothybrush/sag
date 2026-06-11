@@ -46,6 +46,10 @@ That’s why `sag "Hello"`, `sag speak "Hello"`, and `echo Hello | sag` all beha
 
 The request type is a strict struct (`TTSRequest`) that omits fields with `omitempty` so server defaults stay intact when the user doesn’t set a slider.
 
+## 60db client
+
+`internal/sixtydb/client.go` merges the live `/default-voices` and `/myvoices` catalogs and uses `/tts-synthesize` for speech. The live service returns NDJSON base64 chunks containing 48 kHz mono PCM. The adapter bounds and validates every frame, rejects incomplete output, supports the documented JSON envelope as a compatibility path, and wraps raw PCM in a WAV container before returning it.
+
 ## Streaming pipeline
 
 Streaming combines a file write and a player feed via `io.MultiWriter`:
@@ -71,7 +75,7 @@ The non-streaming path is simpler: read the full body, write the file, then play
 `internal/audio` owns playback. Two backends:
 
 - `afplay` — shells out to macOS `afplay`. Buffers the entire stream to a temp file (afplay needs the full WAV header for PCM). Uses `os.CommandContext` so cancellation works.
-- `oto` — pure-Go decoder pipeline (`go-mp3` → `oto.Player`). True streaming, decodes chunk-by-chunk, cross-platform.
+- `oto` — pure-Go MP3 or PCM16 WAV decoder pipeline into `oto.Player`. MP3 is decoded chunk-by-chunk; WAV playback uses the validated complete file.
 
 The `auto` mode picks `afplay` on macOS and `oto` everywhere else. Override with `--player` or `SAG_PLAYER`.
 

@@ -5,13 +5,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestNewClientDefaultsBase(t *testing.T) {
@@ -157,7 +155,7 @@ func TestConvertTTSUsesDocumentedRouteAndValidatesResponse(t *testing.T) {
 		if body["text"] != "hi" || body["voice_id"] != "v1" {
 			t.Fatalf("unexpected request body: %+v", body)
 		}
-		if body["speed"] != 1.1 || body["stability"] != 50.0 || body["similarity"] != 80.0 || body["output_format"] != "mp3" {
+		if body["speed"] != 1.1 || body["stability"] != 50.0 || body["similarity"] != 80.0 || body["output_format"] != "mp3" || body["sample_rate"] != float64(DefaultSampleRate) {
 			t.Fatalf("unexpected mapped request body: %+v", body)
 		}
 
@@ -242,31 +240,152 @@ func TestConvertTTSRejectsMalformedOrMismatchedAudio(t *testing.T) {
 	}
 }
 
-func TestStreamTTSUsesDocumentedRouteAndDecodesNDJSON(t *testing.T) {
-	chunk1 := mustBase64([]byte("ID3hello-"))
-	chunk2 := mustBase64([]byte("world"))
+func TestConvertTTSAcceptsLiveNDJSONPCMAndWrapsWAV(t *testing.T) {
+	chunk1 := []byte{0, 0, 1, 0}
+	chunk2 := []byte{2, 0, 3, 0}
+	inner, err := json.Marshal(map[string]any{
+		"result": map[string]string{"audioContent": mustBase64(chunk2)},
+	})
+	if err != nil {
+		t.Fatalf("marshal nested chunk: %v", err)
+	}
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/tts-stream" {
+		if r.URL.Path != "/tts-synthesize" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
-		}
-		if got := r.Header.Get("Authorization"); got != "Bearer key" {
-			t.Fatalf("unexpected auth header: %q", got)
 		}
 		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
-		if _, ok := body["output_format"]; ok {
-			t.Fatalf("expected output_format omitted from stream body")
+		if body["output_format"] != "wav" || body["sample_rate"] != float64(DefaultSampleRate) {
+			t.Fatalf("unexpected request body: %+v", body)
 		}
-		_, _ = io.WriteString(w, `{"type":"chunk","result":{"audioContent":"`+chunk1+`"}}`+"\n")
-		_, _ = io.WriteString(w, `{"type":"chunk","result":{"audioContent":"`+chunk2+`"}}`+"\n")
-		_, _ = io.WriteString(w, `{"type":"complete"}`+"\n")
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = io.WriteString(w, `{"result":{"audioContent":"`+mustBase64(chunk1)+`"}}`+"\n")
+		_, _ = io.WriteString(w, `{"result":{"audioContent":"`+mustBase64(inner)+`"}}`+"\n")
+		_, _ = io.WriteString(w, `{"type":"meta","audio_sec":0.1}`+"\n")
 	}))
 	defer srv.Close()
 
 	c := NewClient("key", srv.URL)
-	rc, err := c.StreamTTS(context.Background(), TTSRequest{Text: "hi"})
+	got, err := c.ConvertTTS(context.Background(), TTSRequest{Text: "hi", OutputFormat: "wav"})
+	if err != nil {
+		t.Fatalf("ConvertTTS error: %v", err)
+	}
+	if len(got) != 44+len(chunk1)+len(chunk2) {
+		t.Fatalf("WAV length = %d, want %d", len(got), 44+len(chunk1)+len(chunk2))
+	}
+	if string(got[:4]) != "RIFF" || string(got[8:12]) != "WAVE" {
+		t.Fatalf("missing WAV header: %q", got[:12])
+	}
+	wantPCM := append(append([]byte(nil), chunk1...), chunk2...)
+	if !bytes.Equal(got[44:], wantPCM) {
+		t.Fatalf("PCM body = %v, want %v", got[44:], wantPCM)
+	}
+}
+
+func TestConvertTTSRejectsIncompleteLiveNDJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = io.WriteString(w, `{"result":{"audioContent":"`+mustBase64([]byte{0, 0})+`"}}`+"\n")
+		_, _ = io.WriteString(w, `{"incomplete":true,"reasons":["truncated:ratio=0.48"]}`+"\n")
+	}))
+	defer srv.Close()
+
+	c := NewClient("key", srv.URL)
+	_, err := c.ConvertTTS(context.Background(), TTSRequest{Text: "hi", OutputFormat: "wav"})
+	if err == nil || !strings.Contains(err.Error(), "incomplete response: truncated:ratio=0.48") {
+		t.Fatalf("expected incomplete response error, got %v", err)
+	}
+}
+
+func TestConvertTTSRejectsLiveNDJSONErrorWithoutLeakingToken(t *testing.T) {
+	const secret = "secret-token"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = io.WriteString(w, `{"success":false,"message":"Bearer `+secret+` invalid token"}`)
+	}))
+	defer srv.Close()
+
+	c := NewClient(secret, srv.URL)
+	_, err := c.ConvertTTS(context.Background(), TTSRequest{Text: "hi", OutputFormat: "wav"})
+	assertSanitizedError(t, err, secret, "invalid token")
+}
+
+func TestConvertTTSRejectsMalformedLiveNDJSON(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		format    string
+		wantError string
+	}{
+		{
+			name:      "bad json",
+			body:      `not-json`,
+			format:    "wav",
+			wantError: "decode NDJSON frame",
+		},
+		{
+			name:      "no audio",
+			body:      `{"type":"meta"}`,
+			format:    "wav",
+			wantError: "contained no audio chunks",
+		},
+		{
+			name:      "odd PCM byte count",
+			body:      `{"result":{"audioContent":"` + mustBase64([]byte{1}) + `"}}`,
+			format:    "wav",
+			wantError: "incomplete 16-bit sample",
+		},
+		{
+			name:      "raw PCM for mp3 request",
+			body:      `{"result":{"audioContent":"` + mustBase64([]byte{0, 0}) + `"}}`,
+			format:    "mp3",
+			wantError: "raw PCM for requested mp3",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/x-ndjson")
+				_, _ = io.WriteString(w, tt.body)
+			}))
+			defer srv.Close()
+
+			c := NewClient("key", srv.URL)
+			_, err := c.ConvertTTS(context.Background(), TTSRequest{Text: "hi", OutputFormat: tt.format})
+			if err == nil || !strings.Contains(err.Error(), tt.wantError) {
+				t.Fatalf("expected %q, got %v", tt.wantError, err)
+			}
+		})
+	}
+}
+
+func TestDecodeAudioContentRejectsPerChunkAndTotalLimits(t *testing.T) {
+	tooLargeChunk := mustBase64(bytes.Repeat([]byte{'a'}, maxDecodedChunkBytes+1))
+	if _, err := decodeAudioContent(tooLargeChunk, 0); err == nil || !strings.Contains(err.Error(), "audio chunk exceeds") {
+		t.Fatalf("expected chunk limit error, got %v", err)
+	}
+
+	if _, err := decodeAudioContent(mustBase64([]byte("abc")), maxDecodedAudioBytes-2); err == nil || !strings.Contains(err.Error(), "audio exceeds") {
+		t.Fatalf("expected total limit error, got %v", err)
+	}
+}
+
+func TestStreamTTSUsesLiveSynthesizeRouteAndReturnsValidatedWAV(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/tts-synthesize" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = io.WriteString(w, `{"result":{"audioContent":"`+mustBase64([]byte{0, 0, 1, 0})+`"}}`)
+	}))
+	defer srv.Close()
+
+	c := NewClient("key", srv.URL)
+	rc, err := c.StreamTTS(context.Background(), TTSRequest{Text: "hi", OutputFormat: "wav"})
 	if err != nil {
 		t.Fatalf("StreamTTS error: %v", err)
 	}
@@ -276,146 +395,8 @@ func TestStreamTTSUsesDocumentedRouteAndDecodesNDJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read stream: %v", err)
 	}
-	if string(got) != "ID3hello-world" {
-		t.Fatalf("unexpected stream body: %q", got)
-	}
-}
-
-func TestStreamTTSRejectsInvalidTokenWithoutLeakingToken(t *testing.T) {
-	const secret = "secret-token"
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = io.WriteString(w, `{"success":false,"message":"Bearer `+secret+` invalid token"}`)
-	}))
-	defer srv.Close()
-
-	c := NewClient(secret, srv.URL)
-	_, err := c.StreamTTS(context.Background(), TTSRequest{Text: "hi"})
-	assertSanitizedError(t, err, secret, "invalid token")
-}
-
-func TestStreamTTSRejectsMalformedStreams(t *testing.T) {
-	tests := []struct {
-		name  string
-		lines []string
-		want  string
-		isErr error
-	}{
-		{
-			name:  "bad json",
-			lines: []string{`not-json`},
-			want:  "decode stream frame",
-		},
-		{
-			name:  "unknown frame type",
-			lines: []string{`{"type":"wat"}`},
-			want:  `unknown stream frame type "wat"`,
-		},
-		{
-			name:  "missing audio content",
-			lines: []string{`{"type":"chunk","result":{"audioContent":""}}`},
-			want:  "missing audioContent",
-		},
-		{
-			name:  "unknown audio format",
-			lines: []string{`{"type":"chunk","result":{"audioContent":"` + mustBase64([]byte("bad")) + `"}}`},
-			want:  "unknown streamed audio format",
-		},
-		{
-			name:  "complete without audio",
-			lines: []string{`{"type":"complete"}`},
-			want:  "stream completed without audio",
-		},
-		{
-			name:  "empty stream",
-			lines: nil,
-			isErr: io.ErrUnexpectedEOF,
-		},
-		{
-			name:  "missing complete frame",
-			lines: []string{`{"type":"chunk","result":{"audioContent":"` + mustBase64([]byte("ID3chunk")) + `"}}`},
-			isErr: io.ErrUnexpectedEOF,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			reader := newNDJSONAudioReader(context.Background(), io.NopCloser(strings.NewReader(strings.Join(tt.lines, "\n"))), nil)
-			defer func() { _ = reader.Close() }()
-
-			_, err := io.ReadAll(reader)
-			if tt.isErr != nil {
-				if !errors.Is(err, tt.isErr) {
-					t.Fatalf("expected %v, got %v", tt.isErr, err)
-				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("expected %q, got %v", tt.want, err)
-			}
-		})
-	}
-}
-
-func TestNDJSONAudioReaderHonorsCancellation(t *testing.T) {
-	pr, pw := io.Pipe()
-	ctx, cancel := context.WithCancel(context.Background())
-	reader := newNDJSONAudioReader(ctx, pr, nil)
-	defer func() { _ = reader.Close() }()
-
-	done := make(chan error, 1)
-	go func() {
-		_, err := io.ReadAll(reader)
-		done <- err
-	}()
-
-	cancel()
-	_ = pw.Close()
-
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("expected context.Canceled, got %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("stream read did not unblock on cancellation")
-	}
-}
-
-func TestNDJSONAudioReaderRejectsOversizedFrame(t *testing.T) {
-	line := strings.Repeat("a", maxStreamFrameBytes+1)
-	reader := newNDJSONAudioReader(context.Background(), io.NopCloser(strings.NewReader(line)), nil)
-	defer func() { _ = reader.Close() }()
-
-	_, err := io.ReadAll(reader)
-	if err == nil || !strings.Contains(err.Error(), "token too long") {
-		t.Fatalf("expected oversized frame error, got %v", err)
-	}
-}
-
-func TestNDJSONAudioReaderSanitizesErrorFrames(t *testing.T) {
-	const secret = "secret-token"
-	reader := newNDJSONAudioReader(
-		context.Background(),
-		io.NopCloser(strings.NewReader(`{"type":"error","message":"Bearer `+secret+` invalid token"}`)),
-		func(msg string) string {
-			return strings.ReplaceAll(msg, secret, "[redacted]")
-		},
-	)
-	defer func() { _ = reader.Close() }()
-
-	_, err := io.ReadAll(reader)
-	assertSanitizedError(t, err, secret, "invalid token")
-}
-
-func TestDecodeChunkRejectsPerChunkAndTotalLimits(t *testing.T) {
-	tooLargeChunk := mustBase64(bytes.Repeat([]byte{'a'}, maxDecodedChunkBytes+1))
-	if _, err := decodeChunk(tooLargeChunk, 0); err == nil || !strings.Contains(err.Error(), "stream chunk exceeds") {
-		t.Fatalf("expected chunk limit error, got %v", err)
-	}
-
-	if _, err := decodeChunk(mustBase64([]byte("abc")), maxDecodedAudioBytes-2); err == nil || !strings.Contains(err.Error(), "stream audio exceeds") {
-		t.Fatalf("expected total limit error, got %v", err)
+	if string(got[:4]) != "RIFF" || string(got[8:12]) != "WAVE" {
+		t.Fatalf("unexpected stream body: %q", got[:12])
 	}
 }
 

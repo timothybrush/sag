@@ -77,7 +77,7 @@ When sag is the bottleneck and the shell aborts the request, you’ll get a part
 | --- | --- |
 | `auto` (default) | `afplay` on macOS, `oto` everywhere else. |
 | `afplay` | macOS only; routes through CoreAudio so AirPlay and Bluetooth zones work. |
-| `oto` | Cross-platform Go decoder (`go-mp3` + `oto`). |
+| `oto` | Cross-platform MP3/WAV decoder + `oto`. |
 
 Pick a backend explicitly via `--player oto` or `SAG_PLAYER=oto`. See [Streaming & playback](streaming.md) for trade-offs.
 

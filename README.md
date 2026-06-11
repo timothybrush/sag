@@ -37,13 +37,13 @@ Selection rules:
 
 Optional ElevenLabs defaults: `ELEVENLABS_VOICE_ID` or `SAG_VOICE_ID`. Override the active provider host with `--base-url`.
 
-60db support is intentionally narrow and follows the documented HTTP API:
+60db support is intentionally narrow and follows the live API behavior:
 - voice discovery merges `GET /default-voices` and `GET /myvoices`
-- default MP3 streaming uses `POST /tts-stream`
-- explicit file formats and full downloads use `POST /tts-synthesize`
-- the `success` envelope is validated even on HTTP 200 responses
+- synthesis uses `POST /tts-synthesize`, validates every NDJSON frame, and wraps the returned 48 kHz PCM as WAV
+- incomplete or malformed provider responses fail instead of producing a truncated file
+- 60db currently supports WAV playback/output only; its live synthesis response is buffered rather than streamed
 
-Shared speak flags that work on both providers include `--voice`, `--speed` / `--rate`, `--stability`, `--similarity`, `--format`, `--stream`, `--play`, `--output`, `--timeout`, and `--metrics`.
+Shared speak flags that work on both providers include `--voice`, `--speed` / `--rate`, `--stability`, `--similarity`, `--play`, `--output`, `--timeout`, and `--metrics`. On 60db, `--format` accepts only `wav`, and an explicit `--stream` is rejected.
 
 ElevenLabs-only speak flags fail fast on 60db: `--model-id`, `--style`, `--speaker-boost` / `--no-speaker-boost`, `--seed`, `--normalize`, `--lang`, and `--latency-tier`. `--stability` / `--similarity` still use the CLI's `0..1` range and are scaled to 60db's documented `0..100` API values. See [docs/providers.md](docs/providers.md) for provider-specific details.
 
@@ -56,7 +56,7 @@ Features:
 - Speed/rate controls, latency tiers, and format inference from output extension.
 - Model selection via `--model-id` (defaults to `eleven_v3`; use `eleven_multilingual_v2` for a stable baseline).
 
-Speak (streams audio):
+Speak with ElevenLabs streaming:
 ```bash
 sag speak -v Roger "Hello world"
 ```
@@ -171,4 +171,4 @@ ffprobe -v quiet -show_entries format=duration -of csv=p=0 long.mp3
 ## Limitations
 - One provider API key is required.
 - Voice defaults to first available if not provided.
-- Non-mac platforms: playback still works via `go-mp3` + `oto`, but device selection flags are no-ops.
+- Non-mac platforms: playback still works via MP3/WAV decoding + `oto`, but device selection flags are no-ops.

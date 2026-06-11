@@ -50,7 +50,7 @@ If the duration is shorter than expected:
 
 ## Streaming caveat
 
-When streaming (`--stream`, the default), sag writes audio bytes to disk as they arrive. If the request errors halfway, you get a half-formed MP3/WAV/Opus file. Either delete it and retry, or use `--no-stream` so the file appears only after the full response has been received.
+When ElevenLabs streaming is active (`--stream`, the default), sag writes audio bytes to disk as they arrive. If the request errors halfway, you get a half-formed MP3/WAV/Opus file. Either delete it and retry, or use `--no-stream` so the file appears only after the full response has been received. 60db is always buffered and validated before a WAV file is written.
 
 ## Outer process timeouts
 

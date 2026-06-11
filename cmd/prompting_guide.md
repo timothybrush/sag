@@ -48,7 +48,7 @@ Notes:
 - Tag effectiveness depends on the voice + training samples; not every voice reacts well.
 - Combine tags sparingly; more tags ≠ better audio.
 
-## Knobs in `sag` (0.3.0)
+## Knobs in `sag` (0.4.0)
 
 Voice sliders:
 - `--stability` (v3 presets: 0.0=Creative, 0.5=Natural, 1.0=Robust; v2/v2.5: 0..1)

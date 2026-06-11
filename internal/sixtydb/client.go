@@ -1,5 +1,4 @@
-// Package sixtydb provides a strict adapter for the documented 60db HTTP TTS
-// endpoints.
+// Package sixtydb provides a strict adapter for the live 60db HTTP TTS API.
 package sixtydb
 
 import (
@@ -23,6 +22,8 @@ import (
 const DefaultBaseURL = "https://api.60db.ai"
 
 const (
+	// DefaultSampleRate matches the live 60db PCM response.
+	DefaultSampleRate    = 48000
 	maxDecodedAudioBytes = 96 << 20
 	maxDecodedChunkBytes = 8 << 20
 	maxStreamFrameBytes  = 12 << 20
@@ -44,7 +45,7 @@ type Client struct {
 	httpClient *http.Client
 }
 
-// TTSRequest is the documented 60db TTS payload shape exposed by the CLI.
+// TTSRequest is the 60db TTS payload shape exposed by the CLI.
 type TTSRequest struct {
 	Text         string   `json:"text"`
 	VoiceID      string   `json:"voice_id,omitempty"`
@@ -52,6 +53,7 @@ type TTSRequest struct {
 	Stability    *float64 `json:"stability,omitempty"`
 	Similarity   *float64 `json:"similarity,omitempty"`
 	OutputFormat string   `json:"output_format,omitempty"`
+	SampleRate   int      `json:"sample_rate,omitempty"`
 }
 
 // NewClient returns a Client configured with the given API key and base URL.
@@ -375,6 +377,11 @@ type synthResponse struct {
 	OutputFormat    string  `json:"output_format"`
 }
 
+type synthEnvelope struct {
+	synthResponse
+	BackendResponse *synthResponse `json:"backendResponse"`
+}
+
 func validateRequestedFormat(requested string) error {
 	if requested == "" {
 		return nil
@@ -406,11 +413,238 @@ func validateConvertResponseFormat(requested string, resp synthResponse, data []
 	return nil
 }
 
+func validateAudioFormat(requested string, data []byte) error {
+	sniffed, err := sniffAudioFormat(data)
+	if err != nil {
+		return err
+	}
+	expected := parseAudioFormat(requested)
+	if expected != "" && sniffed != expected {
+		return fmt.Errorf("response format mismatch: requested %s, decoded %s", expected, sniffed)
+	}
+	return nil
+}
+
+func wrapPCM16LEWAV(pcm []byte, sampleRate int) ([]byte, error) {
+	if len(pcm) == 0 {
+		return nil, errors.New("empty PCM audio")
+	}
+	if len(pcm)%2 != 0 {
+		return nil, errors.New("PCM audio has an incomplete 16-bit sample")
+	}
+	if sampleRate <= 0 {
+		return nil, errors.New("invalid PCM sample rate")
+	}
+
+	const (
+		headerSize    = 44
+		channelCount  = 1
+		bitsPerSample = 16
+	)
+	if uint64(len(pcm)) > uint64(^uint32(0))-headerSize {
+		return nil, errors.New("PCM audio is too large for WAV")
+	}
+
+	dataSize := uint32(len(pcm))
+	byteRate := uint32(sampleRate * channelCount * bitsPerSample / 8)
+	blockAlign := uint16(channelCount * bitsPerSample / 8)
+	wav := make([]byte, headerSize+len(pcm))
+	copy(wav[0:4], "RIFF")
+	putUint32LE(wav[4:8], 36+dataSize)
+	copy(wav[8:12], "WAVE")
+	copy(wav[12:16], "fmt ")
+	putUint32LE(wav[16:20], 16)
+	putUint16LE(wav[20:22], 1)
+	putUint16LE(wav[22:24], channelCount)
+	putUint32LE(wav[24:28], uint32(sampleRate))
+	putUint32LE(wav[28:32], byteRate)
+	putUint16LE(wav[32:34], blockAlign)
+	putUint16LE(wav[34:36], bitsPerSample)
+	copy(wav[36:40], "data")
+	putUint32LE(wav[40:44], dataSize)
+	copy(wav[44:], pcm)
+	return wav, nil
+}
+
+func putUint16LE(dst []byte, value uint16) {
+	dst[0] = byte(value)
+	dst[1] = byte(value >> 8)
+}
+
+func putUint32LE(dst []byte, value uint32) {
+	dst[0] = byte(value)
+	dst[1] = byte(value >> 8)
+	dst[2] = byte(value >> 16)
+	dst[3] = byte(value >> 24)
+}
+
+func decodeBase64Audio(encoded string, limit int, label string) ([]byte, error) {
+	encoded = strings.TrimSpace(encoded)
+	if encoded == "" {
+		return nil, fmt.Errorf("%s is empty", label)
+	}
+	decodedLen := base64.StdEncoding.DecodedLen(len(encoded))
+	if decodedLen <= 0 {
+		return nil, fmt.Errorf("%s decoded to empty audio", label)
+	}
+	if decodedLen > limit {
+		return nil, fmt.Errorf("%s exceeds %d bytes", label, limit)
+	}
+
+	decoded := make([]byte, decodedLen)
+	n, err := base64.StdEncoding.Decode(decoded, []byte(encoded))
+	if err != nil {
+		return nil, fmt.Errorf("decode %s: %w", label, err)
+	}
+	decoded = decoded[:n]
+	if len(decoded) == 0 {
+		return nil, fmt.Errorf("%s decoded to empty audio", label)
+	}
+	return decoded, nil
+}
+
+func decodeAudioContent(encoded string, totalBytes int64) ([]byte, error) {
+	decoded, err := decodeBase64Audio(encoded, maxStreamFrameBytes, "audio chunk")
+	if err != nil {
+		return nil, err
+	}
+
+	if bytes.HasPrefix(bytes.TrimSpace(decoded), []byte("{")) {
+		var inner struct {
+			Result struct {
+				AudioContent string `json:"audioContent"`
+			} `json:"result"`
+			AudioContent string `json:"audioContent"`
+		}
+		if err := json.Unmarshal(decoded, &inner); err != nil {
+			return nil, fmt.Errorf("decode nested audio chunk: %w", err)
+		}
+		encoded = inner.Result.AudioContent
+		if encoded == "" {
+			encoded = inner.AudioContent
+		}
+		decoded, err = decodeBase64Audio(encoded, maxDecodedChunkBytes, "nested audio chunk")
+		if err != nil {
+			return nil, err
+		}
+	} else if len(decoded) > maxDecodedChunkBytes {
+		return nil, fmt.Errorf("audio chunk exceeds %d bytes", maxDecodedChunkBytes)
+	}
+
+	if totalBytes+int64(len(decoded)) > maxDecodedAudioBytes {
+		return nil, fmt.Errorf("audio exceeds %d bytes", maxDecodedAudioBytes)
+	}
+	return decoded, nil
+}
+
+type liveSynthFrame struct {
+	envelope
+	Type   string `json:"type"`
+	Result struct {
+		AudioContent string `json:"audioContent"`
+	} `json:"result"`
+	AudioContent string   `json:"audioContent"`
+	Incomplete   bool     `json:"incomplete"`
+	Reasons      []string `json:"reasons"`
+}
+
+func (c *Client) decodeNDJSONAudio(ctx context.Context, src io.Reader, requested string, sampleRate int) ([]byte, error) {
+	scanner := bufio.NewScanner(src)
+	scanner.Buffer(make([]byte, 64*1024), maxStreamFrameBytes)
+
+	var audio bytes.Buffer
+	for scanner.Scan() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		line := bytes.TrimSpace(scanner.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+
+		var frame liveSynthFrame
+		if err := json.Unmarshal(line, &frame); err != nil {
+			return nil, fmt.Errorf("synthesize audio: decode NDJSON frame: %w", err)
+		}
+		if frame.Success != nil && !*frame.Success {
+			return nil, c.errorFromEnvelope("synthesize audio", frame.envelope, "request failed")
+		}
+		if frame.Incomplete {
+			reason := strings.Join(frame.Reasons, ", ")
+			if reason == "" {
+				reason = "provider returned incomplete audio"
+			}
+			return nil, fmt.Errorf("synthesize audio: incomplete response: %s", c.sanitize(reason))
+		}
+		if frame.Type == "error" {
+			return nil, c.errorFromEnvelope("synthesize audio", frame.envelope, "provider returned an error frame")
+		}
+
+		encoded := frame.Result.AudioContent
+		if encoded == "" {
+			encoded = frame.AudioContent
+		}
+		if encoded == "" {
+			continue
+		}
+		chunk, err := decodeAudioContent(encoded, int64(audio.Len()))
+		if err != nil {
+			return nil, fmt.Errorf("synthesize audio: %w", err)
+		}
+		_, _ = audio.Write(chunk)
+	}
+	if err := scanner.Err(); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, fmt.Errorf("synthesize audio: read NDJSON frame: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if audio.Len() == 0 {
+		return nil, errors.New("synthesize audio: response contained no audio chunks")
+	}
+
+	data := audio.Bytes()
+	if _, err := sniffAudioFormat(data); err == nil {
+		if err := validateAudioFormat(requested, data); err != nil {
+			return nil, fmt.Errorf("synthesize audio: %w", err)
+		}
+		return append([]byte(nil), data...), nil
+	}
+	if expected := parseAudioFormat(requested); expected != "" && expected != audioFormatWAV {
+		return nil, fmt.Errorf("synthesize audio: provider returned raw PCM for requested %s output", expected)
+	}
+	wav, err := wrapPCM16LEWAV(data, sampleRate)
+	if err != nil {
+		return nil, fmt.Errorf("synthesize audio: %w", err)
+	}
+	return wav, nil
+}
+
+func readLimitedAudio(src io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(src, maxDecodedAudioBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, errors.New("empty audio")
+	}
+	if len(data) > maxDecodedAudioBytes {
+		return nil, fmt.Errorf("audio exceeds %d bytes", maxDecodedAudioBytes)
+	}
+	return data, nil
+}
+
 // ConvertTTS downloads the full audio and returns decoded bytes.
 func (c *Client) ConvertTTS(ctx context.Context, reqBody TTSRequest) ([]byte, error) {
 	reqBody.OutputFormat = CanonicalOutputFormat(reqBody.OutputFormat)
 	if err := validateRequestedFormat(reqBody.OutputFormat); err != nil {
 		return nil, err
+	}
+	if reqBody.SampleRate == 0 {
+		reqBody.SampleRate = DefaultSampleRate
 	}
 
 	bodyBytes, err := json.Marshal(reqBody)
@@ -422,7 +656,7 @@ func (c *Client) ConvertTTS(ctx context.Context, reqBody TTSRequest) ([]byte, er
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "application/x-ndjson, application/json, audio/*, application/octet-stream")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -435,9 +669,41 @@ func (c *Client) ConvertTTS(ctx context.Context, reqBody TTSRequest) ([]byte, er
 		return nil, c.httpError("synthesize audio", resp.Status, body)
 	}
 
-	var body synthResponse
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+	if strings.Contains(contentType, "application/x-ndjson") || strings.Contains(contentType, "ndjson") {
+		return c.decodeNDJSONAudio(ctx, resp.Body, reqBody.OutputFormat, reqBody.SampleRate)
+	}
+	if strings.Contains(contentType, "audio/") || strings.Contains(contentType, "octet-stream") {
+		data, err := readLimitedAudio(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("synthesize audio: %w", err)
+		}
+		if _, err := sniffAudioFormat(data); err == nil {
+			if err := validateAudioFormat(reqBody.OutputFormat, data); err != nil {
+				return nil, fmt.Errorf("synthesize audio: %w", err)
+			}
+			return data, nil
+		}
+		if expected := parseAudioFormat(reqBody.OutputFormat); expected != "" && expected != audioFormatWAV {
+			return nil, fmt.Errorf("synthesize audio: provider returned raw PCM for requested %s output", expected)
+		}
+		wav, err := wrapPCM16LEWAV(data, reqBody.SampleRate)
+		if err != nil {
+			return nil, fmt.Errorf("synthesize audio: %w", err)
+		}
+		return wav, nil
+	}
+
+	var response synthEnvelope
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, fmt.Errorf("synthesize audio: decode response: %w", err)
+	}
+	body := response.synthResponse
+	if response.BackendResponse != nil {
+		body = *response.BackendResponse
+		if body.Success == nil {
+			body.Success = response.Success
+		}
 	}
 	if body.Success == nil || !*body.Success {
 		return nil, c.errorFromEnvelope("synthesize audio", body.envelope, "unexpected response envelope")
@@ -446,22 +712,9 @@ func (c *Client) ConvertTTS(ctx context.Context, reqBody TTSRequest) ([]byte, er
 		return nil, errors.New("synthesize audio: empty audio_base64")
 	}
 
-	decodedLen := base64.StdEncoding.DecodedLen(len(body.AudioBase64))
-	if decodedLen <= 0 {
-		return nil, errors.New("synthesize audio: empty decoded audio")
-	}
-	if decodedLen > maxDecodedAudioBytes {
-		return nil, fmt.Errorf("synthesize audio: decoded audio exceeds %d bytes", maxDecodedAudioBytes)
-	}
-
-	data := make([]byte, decodedLen)
-	n, err := base64.StdEncoding.Decode(data, []byte(body.AudioBase64))
+	data, err := decodeBase64Audio(body.AudioBase64, maxDecodedAudioBytes, "audio_base64")
 	if err != nil {
-		return nil, fmt.Errorf("synthesize audio: decode audio_base64: %w", err)
-	}
-	data = data[:n]
-	if len(data) == 0 {
-		return nil, errors.New("synthesize audio: decoded audio was empty")
+		return nil, fmt.Errorf("synthesize audio: %w", err)
 	}
 	if err := validateConvertResponseFormat(reqBody.OutputFormat, body, data); err != nil {
 		return nil, fmt.Errorf("synthesize audio: %w", err)
@@ -469,186 +722,12 @@ func (c *Client) ConvertTTS(ctx context.Context, reqBody TTSRequest) ([]byte, er
 	return data, nil
 }
 
-// StreamTTS requests streaming audio. The documented stream API does not
-// accept output_format.
+// StreamTTS preserves the streaming client shape while using the live
+// /tts-synthesize contract, which must be fully validated before playback.
 func (c *Client) StreamTTS(ctx context.Context, reqBody TTSRequest) (io.ReadCloser, error) {
-	if CanonicalOutputFormat(reqBody.OutputFormat) != "" {
-		return nil, errors.New("stream audio: output_format is not supported by /tts-stream")
-	}
-
-	bodyBytes, err := json.Marshal(reqBody)
+	data, err := c.ConvertTTS(ctx, reqBody)
 	if err != nil {
 		return nil, err
 	}
-	req, err := c.newRequest(ctx, http.MethodPost, "/tts-stream", bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/x-ndjson")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode >= 400 {
-		defer func() { _ = resp.Body.Close() }()
-		body, _ := io.ReadAll(resp.Body)
-		return nil, c.httpError("stream audio", resp.Status, body)
-	}
-	return newNDJSONAudioReader(ctx, resp.Body, c.sanitize), nil
-}
-
-type streamFrame struct {
-	Type   string `json:"type"`
-	Result struct {
-		AudioContent string `json:"audioContent"`
-	} `json:"result"`
-	Message string `json:"message"`
-}
-
-type ndjsonAudioReader struct {
-	ctx      context.Context
-	src      io.ReadCloser
-	scanner  *bufio.Scanner
-	pending  []byte
-	err      error
-	stop     func() bool
-	sanitize func(string) string
-
-	totalBytes  int64
-	sawChunk    bool
-	sawComplete bool
-}
-
-func newNDJSONAudioReader(ctx context.Context, src io.ReadCloser, sanitize func(string) string) *ndjsonAudioReader {
-	scanner := bufio.NewScanner(src)
-	scanner.Buffer(make([]byte, 64*1024), maxStreamFrameBytes)
-	if sanitize == nil {
-		sanitize = func(msg string) string { return msg }
-	}
-
-	reader := &ndjsonAudioReader{
-		ctx:      ctx,
-		src:      src,
-		scanner:  scanner,
-		sanitize: sanitize,
-	}
-	reader.stop = context.AfterFunc(ctx, func() {
-		_ = src.Close()
-	})
-	return reader
-}
-
-func (r *ndjsonAudioReader) Read(p []byte) (int, error) {
-	for len(r.pending) == 0 {
-		if r.err != nil {
-			return 0, r.err
-		}
-		if err := r.fill(); err != nil {
-			r.err = err
-			if len(r.pending) == 0 {
-				return 0, err
-			}
-		}
-	}
-	n := copy(p, r.pending)
-	r.pending = r.pending[n:]
-	return n, nil
-}
-
-func (r *ndjsonAudioReader) fill() error {
-	if err := r.ctx.Err(); err != nil {
-		return err
-	}
-	for r.scanner.Scan() {
-		line := bytes.TrimSpace(r.scanner.Bytes())
-		if len(line) == 0 {
-			continue
-		}
-
-		var frame streamFrame
-		if err := json.Unmarshal(line, &frame); err != nil {
-			return fmt.Errorf("decode stream frame: %w", err)
-		}
-
-		switch frame.Type {
-		case "chunk":
-			audio, err := decodeChunk(frame.Result.AudioContent, r.totalBytes)
-			if err != nil {
-				return err
-			}
-			if !r.sawChunk {
-				if _, err := sniffAudioFormat(audio); err != nil {
-					return fmt.Errorf("unknown streamed audio format: %w", err)
-				}
-			}
-			r.sawChunk = true
-			r.totalBytes += int64(len(audio))
-			r.pending = audio
-			return nil
-		case "complete":
-			r.sawComplete = true
-			if !r.sawChunk {
-				return errors.New("stream completed without audio")
-			}
-			return io.EOF
-		case "error":
-			if msg := strings.TrimSpace(frame.Message); msg != "" {
-				return fmt.Errorf("stream error: %s", r.sanitize(msg))
-			}
-			return errors.New("stream error")
-		default:
-			return fmt.Errorf("unknown stream frame type %q", frame.Type)
-		}
-	}
-
-	if err := r.scanner.Err(); err != nil {
-		if ctxErr := r.ctx.Err(); ctxErr != nil {
-			return ctxErr
-		}
-		return fmt.Errorf("read stream frame: %w", err)
-	}
-	if ctxErr := r.ctx.Err(); ctxErr != nil {
-		return ctxErr
-	}
-	if r.sawComplete {
-		return io.EOF
-	}
-	return io.ErrUnexpectedEOF
-}
-
-func decodeChunk(encoded string, totalBytes int64) ([]byte, error) {
-	encoded = strings.TrimSpace(encoded)
-	if encoded == "" {
-		return nil, errors.New("stream chunk missing audioContent")
-	}
-	decodedLen := base64.StdEncoding.DecodedLen(len(encoded))
-	if decodedLen <= 0 {
-		return nil, errors.New("stream chunk decoded to empty audio")
-	}
-	if decodedLen > maxDecodedChunkBytes {
-		return nil, fmt.Errorf("stream chunk exceeds %d bytes", maxDecodedChunkBytes)
-	}
-	if totalBytes+int64(decodedLen) > maxDecodedAudioBytes {
-		return nil, fmt.Errorf("stream audio exceeds %d bytes", maxDecodedAudioBytes)
-	}
-
-	audio := make([]byte, decodedLen)
-	n, err := base64.StdEncoding.Decode(audio, []byte(encoded))
-	if err != nil {
-		return nil, fmt.Errorf("decode audio chunk: %w", err)
-	}
-	audio = audio[:n]
-	if len(audio) == 0 {
-		return nil, errors.New("stream chunk decoded to empty audio")
-	}
-	return audio, nil
-}
-
-func (r *ndjsonAudioReader) Close() error {
-	if r.stop != nil {
-		r.stop()
-	}
-	return r.src.Close()
+	return io.NopCloser(bytes.NewReader(data)), nil
 }

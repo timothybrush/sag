@@ -61,6 +61,8 @@ Name lookup is case-insensitive, with exact matches preferred over substring mat
 
 Streaming is the default. Audio plays as bytes arrive over `POST /v1/text-to-speech/{voice}/stream`. With `--no-stream`, `sag` falls back to `POST /v1/text-to-speech/{voice}`, which returns the entire payload before playback starts (useful for tests or when a downstream tool needs the full file before any byte hits the speakers).
 
+Those routes and streaming controls apply to ElevenLabs. With 60db, sag uses `/tts-synthesize`, buffers and validates the live NDJSON response, wraps its PCM as WAV, and then plays or saves it. The default stream mode is disabled automatically; explicit `--stream` is rejected.
+
 ```bash
 sag --stream "Default."
 sag --no-stream -o file.mp3 "Wait, then save."
@@ -100,7 +102,7 @@ Sliders are only sent when explicitly set (`flag.Changed`). That keeps server-si
 
 ## Output
 
-`-o/--output <path>` writes the audio as it streams. The format is inferred from the extension:
+`-o/--output <path>` writes generated audio to disk. The format is inferred from the extension:
 
 | Extension | Format string |
 | --- | --- |
@@ -109,6 +111,8 @@ Sliders are only sent when explicitly set (`flag.Changed`). That keeps server-si
 | `.ogg` / `.opus` | `opus_48000_64` |
 
 Override with `--format mp3_22050_32` (or any string ElevenLabs accepts). When `-o` is set, speaker playback is disabled by default — pass `--play` to keep both, or `--no-play` to be explicit.
+
+60db output is 48 kHz mono WAV only, so use `.wav` or `--format wav`.
 
 ## Putting it together
 
