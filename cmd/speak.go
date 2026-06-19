@@ -108,10 +108,13 @@ func init() {
 				return err
 			}
 
-			// If user provided output path with a known extension, infer a compatible format.
+			// If user provided output path with a known extension, infer a compatible format
+			// unless --format was explicitly set. Explicit format selection should always win.
 			if opts.outputPath != "" {
-				if inferred := inferFormatFromExt(opts.outputPath); inferred != "" {
-					opts.outputFmt = inferred
+				if !cmd.Flags().Changed("format") {
+					if inferred := inferFormatFromExt(opts.outputPath); inferred != "" {
+						opts.outputFmt = inferred
+					}
 				}
 				// Disable playback when -o is set, unless --play was explicitly provided
 				if !cmd.Flags().Changed("play") {
