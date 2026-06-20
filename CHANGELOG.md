@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixed
+- Explicit `--format` values now override output-extension inference, preserving the requested ElevenLabs audio format. (#21/#22, thanks @100yenadmin)
+
 ## 0.4.0 - 2026-06-11
 ### Added
 - Added live-tested 60db provider support via `/default-voices`, `/myvoices`, and `/tts-synthesize`, including bounded NDJSON decoding, incomplete-response rejection, and PCM-to-WAV playback. (#20, thanks @manishEMS47)
