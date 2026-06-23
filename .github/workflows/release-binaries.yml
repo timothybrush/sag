@@ -18,14 +18,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.ref }}
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: "1.24.x"
+          go-version: "1.25.x"
           check-latest: true
 
       - name: Build macOS binaries
@@ -57,7 +57,7 @@ jobs:
           done
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-macos
           path: |
@@ -76,14 +76,14 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.ref }}
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: "1.24.x"
+          go-version: "1.25.x"
           check-latest: true
 
       - name: Install system dependencies
@@ -106,7 +106,7 @@ jobs:
           (cd dist/out && sha256sum "$archive" > "$archive.sha256")
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-linux-${{ matrix.goarch }}
           path: |
@@ -117,14 +117,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.ref }}
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: "1.24.x"
+          go-version: "1.25.x"
           check-latest: true
 
       - name: Build windows amd64 binary
@@ -151,7 +151,7 @@ jobs:
           [IO.File]::WriteAllText("$zip.sha256", $checksum, [Text.Encoding]::ASCII)
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-windows
           path: |
@@ -163,7 +163,7 @@ jobs:
     needs: [build-macos, build-linux, build-windows]
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
 
@@ -181,7 +181,7 @@ jobs:
           (cd out && sha256sum --check "sag_${version}_checksums.txt")
 
       - name: Upload release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           files: out/*
