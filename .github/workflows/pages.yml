@@ -48,6 +48,7 @@ jobs:
         uses: actions/upload-pages-artifact@v5
         with:
           path: dist/docs-site
+          include-hidden-files: true
 
       - name: Deploy
         id: deployment
