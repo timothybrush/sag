@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 - 2026-07-01
 
 ### Fixed
 - Explicit `--format` values now override output-extension inference, preserving the requested ElevenLabs audio format. (#21/#22, thanks @100yenadmin)
